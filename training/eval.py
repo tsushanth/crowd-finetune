@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend import config, db, gold  # noqa: E402
+from backend import config, db, gold, reward  # noqa: E402
 
 
 def main() -> None:
@@ -29,8 +29,6 @@ def main() -> None:
     model = AutoModelForCausalLM.from_pretrained(
         args.base, torch_dtype=torch.bfloat16, device_map="auto"
     )
-    if args.adapter:
-        model = PeftModel.from_pretrained(model, args.adapter)
     model.eval()
 
     rows = [json.loads(line) for line in Path(args.bench).read_text().splitlines() if line.strip()]
@@ -60,17 +58,43 @@ def main() -> None:
         return sum(scores) / len(scores)
 
     base_score = bench_score()
-    tuned_score = bench_score() if args.adapter else base_score
+    if args.adapter:
+        model = PeftModel.from_pretrained(model, args.adapter)
+        model.eval()
+        tuned_score = bench_score()
+    else:
+        tuned_score = base_score
     delta = tuned_score - base_score
     verdict = "release" if delta >= config.MIN_EVAL_DELTA else "hold"
     print(f"base={base_score:.4f} tuned={tuned_score:.4f} delta={delta:+.4f} -> {verdict}")
 
     conn = db.connect()
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO eval_runs (model_tag, base_bench, tuned_bench, delta, verdict) VALUES (?,?,?,?,?)",
         (args.adapter or args.base, base_score, tuned_score, delta, verdict),
     )
+    eval_run_id = cur.lastrowid
     conn.commit()
+
+    if verdict == "release":
+        accepted_sample_ids = [
+            row["id"]
+            for row in conn.execute(
+                """
+                SELECT a.id FROM accepted_samples a
+                LEFT JOIN release_samples rs ON rs.accepted_sample_id = a.id
+                WHERE rs.accepted_sample_id IS NULL
+                """
+            ).fetchall()
+        ]
+        if accepted_sample_ids:
+            result = reward.settle(conn, eval_run_id, accepted_sample_ids)
+            print(
+                f"settled eval_run {eval_run_id}: credited={result['credited']} "
+                f"paid_players={result['paid_players']}"
+            )
+        else:
+            print(f"eval_run {eval_run_id} released but no unpaid accepted samples to settle")
 
 
 if __name__ == "__main__":
