@@ -85,7 +85,9 @@ backend/
                  # export_weighted(conn, path); CLI --exclude-bench flag
 data/
   seed.tsv       # source-of-truth corpus sheet (corpus_id<niche<question<source<golden_answer<is_gold)
-  corpus.jsonl   # ACTIVE corpus: 22 EU-AI-Act compliance items (see caveats)
+  corpus.jsonl   # ACTIVE corpus: 38 EU-AI-Act compliance items, 24 is_gold
+                 # (7 verified+tainted, usable as control_right/control_wrong;
+                 # see caveats — golden_answer phrasing matters a lot here)
   bench.jsonl    # deterministic 1-in-5 holdout (tools/split_bench.py)
   demo_corpus.jsonl  # fictional building-code QA example (refer only)
 tools/
@@ -151,16 +153,16 @@ EOF
 
 ## Next moves (in rough priority)
 
-1. Run the full pipeline against a REAL API key once — validate warm(),
-   judge grading on the EU-AI-Act corpus, and confirm the demo play loop from
-   the miniapp in a browser.
-2. Validate/swap the EU-AI-Act corpus facts flagged as low-confidence
-   (EU-018 substantial-modification→Art 25; EU-015 deepfake disclosure
-   user↔deployer mapping; EU-009 third fine tier 7.5M/1.5% Art 99(5)) against
-   the consolidated OJ text. Best done as `data/seed.tsv` edits + rebuild.
-3. Wire `training/eval.py` (currently records eval_runs) to call
+1. Wire `training/eval.py` (currently records eval_runs) to call
    `reward.settle` automatically on a passing release run so payouts are
    eval-gated by construction rather than manual.
+2. Confirm the demo play loop from the miniapp in a browser (real-key
+   backend validation is done; the miniapp UI itself hasn't been
+   click-tested against a live server yet).
+3. Grow control_right supply further if session variety still feels thin at
+   7 (see caveat below on golden_answer phrasing before adding more) — and/or
+   add more candidate/control_wrong material now that the citation-number
+   category is confirmed to reliably trip the base model.
 4. Optional hardening exercises: concurrency test on the shared sqlite conn;
    a `data/crowd_sft_valid.jsonl` validation step before LLaMA-Factory; an
    integration test that drives game.py with a stubbed LLM endpoint so CI can
@@ -172,7 +174,13 @@ EOF
 - Stage 2 (reputation/grouping + eval-proven payouts): DONE, smoke-tested.
 - Deploy (Telegram initData auth + Caddy/systemd configs): DONE, files written,
   auth unit-verified; nothing deployed to a real host yet.
-- Not started: real-key pipeline run, corpus fact audit, eval→settle wiring,
+- Real-key pipeline run: DONE (OpenRouter, qwen/qwen-2.5-7b-instruct base +
+  openai/gpt-4o-mini judge). warm() runs clean end-to-end; see corpus-authoring
+  caveat below for what the run actually taught us.
+- Corpus fact audit: DONE for the 3 originally-flagged items (EU-009 fixed
+  1.5%→1%, EU-015 fixed a misleading "(the user under the Act)" gloss,
+  EU-018 corroborated-not-verbatim, left as-is).
+- Not started: eval→settle wiring, miniapp click-test against a live server,
   any actual model training or release.
 
 ## Caveats & decisions to respect
@@ -188,3 +196,24 @@ EOF
 - Do not silently restore the "shrink corpus.jsonl on split" behavior — the
   bench-vs-train design is: bench items stay playable, excluded from training
   only via `export --exclude-bench`.
+- **Corpus authoring: don't embed a citation in `golden_answer` unless the
+  question explicitly asks for one.** Found live getting control_right supply
+  from 2→7: the base model reliably answers yes/no questions correctly but
+  almost always volunteers its own citation anyway (and gets the specific
+  article/annex number wrong more often than not — this model hallucinates
+  citation numbers confidently even when the underlying fact is right). The
+  judge rubric's "no unverifiable additions" scoring then penalizes that
+  self-volunteered wrong citation as if it contradicted the reference, even
+  though the actual yes/no answer was correct — so a factually-correct
+  response scores 0.5 ("borderline") instead of 1.0 ("pass") for a reason
+  that has nothing to do with what the question asked. Verified directly via
+  `gold.judge(...)` on the SAME base_response with only golden_answer changed:
+  embedding "Yes, under Article 17." scored 0.5/fail; rewriting to the
+  substantive fact with no citation to contradict ("Yes, providers of
+  high-risk AI systems must establish and maintain a quality management
+  system...") scored 1.0/pass on the identical model output. Also found:
+  "which article/annex is X" questions (free-recall of a specific number) are
+  NOT an easy category for this model — 0/6 verified in one batch, all wrong
+  numbers, all confidently stated. Yes/no-restatement questions (this model
+  confirming a stated fact rather than recalling a citation cold) verify far
+  more reliably — that's the actual "easy" category, not citation lookups.
