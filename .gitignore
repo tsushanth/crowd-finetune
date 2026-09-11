@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/*.db
+data/crowd.db
+data/bench.jsonl
+data/corpus.jsonl
+data/crowd_sft.jsonl
+*.log

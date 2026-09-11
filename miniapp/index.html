@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CrowdCheck QA</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root { --accent: #2a9d8f; --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, system-ui, sans-serif; min-height: 100vh; }
+.app { max-width: 640px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.3rem; margin-bottom: 8px; }
+.card { background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+.row { display: flex; justify-content: space-between; align-items: center; }
+.timer { font-size: 1.15rem; font-weight: 700; color: var(--accent); }
+.hint { font-size: .85rem; color: var(--muted); }
+.q { font-size: 1.05rem; font-weight: 600; margin: 12px 0; }
+.answer { background: #0b1220; border-left: 4px solid var(--accent); padding: 10px 12px; border-radius: 6px; font-size: .95rem; white-space: pre-wrap; }
+.btn-row { display: flex; gap: 12px; margin-top: 16px; }
+button { flex: 1; padding: 14px; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: .4; cursor: not-allowed; }
+.btn-wrong { background: #ef4444; color: #fff; }
+.btn-correct { background: #22c55e; color: #fff; }
+.btn-neutral { background: var(--accent); color: #fff; }
+.bar { display: flex; gap: 6px; }
+.dot { width: 12px; height: 12px; border-radius: 3px; background: #334155; }
+.dot.done { background: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<script>
+const API = window.BACKEND_URL || "http://localhost:8000";
+const app = document.getElementById("app");
+let tg = window.Telegram && Telegram.WebApp ? Telegram.WebApp : null;
+let state = { session: null, items: [], idx: 0, points: 0 };
+
+if (tg) { tg.ready(); tg.expand(); }
+
+function render(html) { app.innerHTML = html; }
+
+function userId() {
+  if (tgInitData()) {
+    try { return String(JSON.parse(new URLSearchParams(tgInitData()).get("user")).id); } catch (e) {}
+  }
+  if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) return String(tg.initDataUnsafe.user.id);
+  let id = localStorage.getItem("demo-user");
+  if (!id) { id = "demo-" + Math.random().toString(36).slice(2, 8); localStorage.setItem("demo-user", id); }
+  return id;
+}
+
+function tgInitData() {
+  if (tg && tg.initData) return tg.initData;
+  return "";
+}
+
+function headers() {
+  const initData = tgInitData();
+  const h = { "Content-Type": "application/json" };
+  if (initData) h["X-Telegram-InitData"] = initData;
+  return h;
+}
+
+function api(path, body) {
+  return fetch(API + path, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body)
+  }).then(r => r.json());
+}
+
+function dots(done) {
+  return '<div class="bar">' + state.items.map((_, i) => '<span class="dot ' + (i < done ? "done" : "") + '"></span>').join("") + "</div>";
+}
+
+function boot() {
+  render('<div class="card"><h1>CrowdCheck QA</h1><p class="hint" style="margin:8px 0">Spot deliberately-wrong model answers. Your catches train a better niche model.</p>' +
+    '<div class="btn-row"><button class="btn-correct" id="b-play">Play</button>' +
+    '<button class="btn-neutral" id="b-lb">Leaderboard</button></div></div>');
+  document.getElementById("b-play").onclick = startSession;
+  document.getElementById("b-lb").onclick = leaderboard;
+}
+
+function startSession() {
+  render('<div class="card"><p class="hint">Starting session…</p></div>');
+  api("/session/start", { tg_user_id: userId() }).then(res => {
+    state.session = res.session_id;
+    state.items = res.items;
+    state.idx = 0;
+    state.points = res.player_points;
+    item();
+  }).catch(e => { render('<div class="card"><h1>Error</h1><p class="hint" style="margin:8px 0">' + e + '</p>' + '<button class="btn-neutral" id="back">Back</button></div>'); document.getElementById("back").onclick = boot; });
+}
+
+function item() {
+  if (state.idx >= state.items.length) return endSession();
+  const it = state.items[state.idx];
+  const deadline = Date.now() + (it.seconds || 120) * 1000;
+  render('<div class="card">' + dots(state.idx) +
+    '<div class="row"><span class="hint">Question ' + (state.idx + 1) + ' / ' + state.items.length +
+    ' · ' + state.points + ' pts</span><span class="timer" id="timer"></span></div>' +
+    '<div class="q" id="q"></div><div class="answer" id="a"></div>' +
+    '<div class="btn-row"><button class="btn-correct" id="ok">Correct</button>' +
+    '<button class="btn-wrong" id="bad">Wrong</button></div></div>');
+  document.getElementById("q").textContent = it.question;
+  document.getElementById("a").textContent = it.shown_answer;
+  const tick = setInterval(() => {
+    const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+    const t = document.getElementById("timer");
+    if (t) t.textContent = left + "s";
+    if (left <= 0) { clearInterval(tick); submit(false); }
+  }, 250);
+  document.getElementById("ok").onclick = () => { clearInterval(tick); submit(false); };
+  document.getElementById("bad").onclick = () => { clearInterval(tick); submit(true); };
+  window.scrollTo(0, 0);
+}
+
+function submit(markedWrong) {
+  const it = state.items[state.idx++];
+  api("/session/answer", { session_id: state.session, item_id: it.item_id, marked_wrong: markedWrong })
+    .then(res => {
+      if (res.points_awarded > 0) state.points += res.points_awarded;
+      const flash = res.points_awarded > 0 ? " +" + res.points_awarded + " pts" : " no points";
+      const card = '<div class="card"><p class="hint">' + flash + '</p></div>';
+      const c = document.createElement("div");
+      c.innerHTML = card;
+      document.querySelector(".card").after(c.firstElementChild);
+    })
+    .finally(item);
+}
+
+function endSession() {
+  api("/session/end", { session_id: state.session }).then(res => {
+    render('<div class="card"><h1>Done</h1>' +
+      '<p class="hint" style="margin:8px 0">Session points: ' + res.session_points + '</p>' +
+      '<p class="hint" style="margin:8px 0">Accepted adversarial samples: ' + res.accepted_samples + '</p>' +
+      '<p class="hint" style="margin:8px 0">Gate posterior: ' + (res.posterior * 100).toFixed(0) + '%</p>' +
+      '<div class="btn-row"><button class="btn-correct" id="again">Play again</button>' +
+      '<button class="btn-neutral" id="lb">Leaderboard</button></div></div>');
+    document.getElementById("again").onclick = startSession;
+    document.getElementById("lb").onclick = leaderboard;
+  });
+}
+
+function leaderboard() {
+  fetch(API + "/leaderboard", { headers: headers() }).then(r => r.json()).then(rows => {
+    const list = rows.map((r, i) => '<div class="row" style="padding:6px 0"><span>' + (i + 1) + '. ' + r.tg_user_id + '</span><span>' + r.points + ' pts</span></div>').join("");
+    render('<div class="card"><h1>Leaderboard</h1>' + (list || '<p class="hint">No players yet</p>') + '<button class="btn-neutral" id="back" style="margin-top:12px">Back</button></div>');
+    document.getElementById("back").onclick = boot;
+  });
+}
+
+boot();
+</script>
+</body>
+</html>
