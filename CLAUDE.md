@@ -392,16 +392,26 @@ Real numbers from the CPU smoke (this Mac, no GPU box):
   the fix). CPU infinite loops are bounded by the subprocess timeout, not the
   rlimit (rlimit is a second net, do not rely on alarm alone).
 - datasets: `openai/openai_humaneval` NEEDS the `openai/` namespace (bare id
-  404s on hub 5.x). 164 problems; seed 42 split -> 156 train / 8 eval
-  (`--eval-size 8`). Train questions embed the rendered tests; eval questions
-  keep the original prompt only (tests hidden). MBPP loader written but not
-  part of the smoke.
+  404s on hub 5.x). 164 problems; CURRENT split re-run at eval-size 50 ->
+  114 train / 50 eval (was 156/8; uncommitted in the working tree). The first
+  8 eval rows are unchanged (same seed-42 shuffle). Train questions embed the
+  rendered tests; eval questions keep the original prompt only (tests hidden).
+  MBPP loader written but not part of the smoke. NOTE: the old 10 smoke
+  traces (HumanEval/17/30/52/66/121/123/124/127/137/18) are ALL now eval-50
+  rows -> they are NOT re-usable as SFT data (eval leakage); the final SFT set
+  is built only from traces of the current 114-row train split.
 - distill: 10/12 (83%) teacher traces kept after sandbox verification.
   deepseek-r1-0528 402s on long outputs (OpenRouter credits ran dry; after
   top-up it still doesn't hold the code tag shape) -> coderepair teacher
   default is now deepseek/deepseek-v3.2 (DEFAULT_TEACHER), NOT
   config.TEACHER_MODEL. Trace schema: question/reasoning/answer/tests/
   entry_point/imports/source.
+- FULL distill run DONE (on the 114-row train split, deepseek-v3.2): 77/114
+  test-verified traces -> training/coderepair/data/code_sft_full.jsonl; final
+  SFT file rebuilt from it alone via prep_data (dedupe by source, shuffle s42)
+  -> training/coderepair/data/code_sft.jsonl (77 rows, all in-train, 0 eval
+  leakage; extract+parse via formats, sandbox-verified). Gitignored -> must be
+  rsync'd to the box (a git sync won't carry it).
 - SFT: Qwen2.5-0.5B-Instruct, 4 traces, 1 epoch, CPU -> loss 1.633, ~78s.
   Then merge.py adapter -> dense checkpoint before GRPO (GRPOTrainer loads a
   dense base, NOT a LoRA dir).
@@ -423,8 +433,12 @@ Real numbers from the CPU smoke (this Mac, no GPU box):
   merge.py `--output` must be an ABSOLUTE path (it resolves relative to
   training/reasoning/ and silently nests junk dirs otherwise).
 
-Ship shape: not yet shipped. GPU run (run_on_gpu.sh) unvalidated; needed:
-top-up the dataset to ~120 HumanEval + MBPP traces, train SFT+GRPO on the
-rented box, eval pass@1 vs the competitor table above, then decide the
-release gate. Semi-open items: MBPP entry_point extraction, the harder
-repair variant, eval on MBPP (MBPP tests stay in-prompt on this box).
+Ship shape: not yet shipped. GPU run (run_on_gpu.sh) unvalidated; remaining:
+SFT+GRPO on the rented box over the 77-trace HumanEval set, eval pass@1 vs the
+competitor table above, then decide the release gate. Box-run caveats: (a)
+`run_on_gpu.sh` re-materializes the dataset at `EVAL_SIZE` (default 24) -> set
+`EVAL_SIZE=50` and `SKIP_DISTILL=1` to match the local 114/50 split + local
+traces; (b) the SFT file is gitignored, so rsync training/coderepair/data/
+alongside the git sync; (c) merge.py `--output` must be absolute. Semi-open
+items: MBPP entry_point extraction, the harder repair variant, eval on MBPP
+(MBPP tests stay in-prompt on this box).
