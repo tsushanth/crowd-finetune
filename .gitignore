@@ -7,4 +7,8 @@ data/crowd.db
 data/bench.jsonl
 data/corpus.jsonl
 data/crowd_sft.jsonl
+data/crowd_sft_weighted.jsonl
+outputs/
+training/reasoning/data/
+training/reasoning/outputs/
 *.log

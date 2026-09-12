@@ -19,6 +19,7 @@ JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-4o-mini")
 JUDGE_MIN_SCORE = float(os.getenv("JUDGE_MIN_SCORE", "0.9"))
 FILTER_THETA = float(os.getenv("FILTER_THETA", "0.8"))
 MIN_EVAL_DELTA = float(os.getenv("MIN_EVAL_DELTA", "0.03"))
+TEACHER_MODEL = os.getenv("TEACHER_MODEL", "deepseek/deepseek-r1-0528")
 CORPUS_PATH = Path(
     os.getenv("CORPUS_PATH", str(BASE_DIR / "data" / "corpus.jsonl"))
 )

@@ -26,9 +26,18 @@ def main() -> None:
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(args.base)
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        dtype = torch.bfloat16
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        dtype = torch.bfloat16
+    else:
+        device = torch.device("cpu")
+        dtype = torch.float32
     model = AutoModelForCausalLM.from_pretrained(
-        args.base, torch_dtype=torch.bfloat16, device_map="auto"
-    )
+        args.base, torch_dtype=dtype, low_cpu_mem_usage=True
+    ).to(device)
     model.eval()
 
     rows = [json.loads(line) for line in Path(args.bench).read_text().splitlines() if line.strip()]
@@ -41,9 +50,10 @@ def main() -> None:
         scores = []
         for row in rows:
             messages = [{"role": "user", "content": row["question"]}]
-            ids = tokenizer.apply_chat_template(
+            enc = tokenizer.apply_chat_template(
                 messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
             )
+            ids = enc["input_ids"] if not isinstance(enc, torch.Tensor) else enc
             out = model.generate(
                 ids.to(model.device),
                 max_new_tokens=args.max_new,

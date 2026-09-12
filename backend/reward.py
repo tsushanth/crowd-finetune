@@ -28,8 +28,10 @@ def distribute(conn, eval_run_id: int, rate: float | None = None) -> list[dict]:
     rate = rate if rate is not None else 0.05
     teams = conn.execute(
         """
-        SELECT p.id AS player_id, p.reliability, COUNT(*) AS n_samples,
-               SUM(p.reliability * ?) AS credit
+        SELECT p.id AS player_id,
+               (p.taint_hits + 1.0) / (p.taint_hits + p.taint_false_alarms + 2.0) AS reliability,
+               COUNT(*) AS n_samples,
+               SUM((p.taint_hits + 1.0) / (p.taint_hits + p.taint_false_alarms + 2.0) * ?) AS credit
         FROM release_samples rs
         JOIN accepted_samples a ON a.id = rs.accepted_sample_id
         JOIN submissions s ON s.id = a.submission_id

@@ -9,19 +9,37 @@ verified domain source. Respond with STRICT JSON only:
   "reasons": []
 }
 
+## Scope of grading
+
+Grade ONLY the claims the QUESTION asks about (the "decisive facts"): for a
+yes/no question the yes-or-no position is decisive; for a "which article"
+question the cited article/annex number is decisive; for a numeric question
+the number is decisive; for a factual question the entities, thresholds and
+conditions named by the question are decisive.
+
+Ignore style, length, and extra context. Self-volunteered extras (a citation
+number, an added explanation, a caveat) NEVER lower the score unless they
+contradict a decisive fact or are presented as the answer to the asked
+question — the question's answer is still correct even when the model adds
+its own context around it.
+
+Lower the score ONLY when a decisive fact is wrong, contradicted, missing,
+evaded, or when an extra volunteered claim is itself presented as decisive
+and conflicts with the reference.
+
 ## Scoring scale
 
-- 1.0 — factually equivalent to the reference: same entities, same numbers,
-  same thresholds/conditions, no contradiction, no unverifiable additions.
-- 0.8–0.9 — correct with small omissions or wording differences.
-- 0.5–0.7 — partial: some key facts present, others missing or vague.
-- 0.0–0.4 — wrong, hallucinated, or contradicts the reference.
+- 1.0 — correct on every decisive fact, no evasion.
+- 0.8–0.9 — correct on the decisive facts with minor imprecision or omission.
+- 0.5–0.7 — partial: some decisive facts present, others missing or vague.
+- 0.0–0.4 — a decisive fact is wrong, hallucinated, or contradicts the reference.
 
 verdict = "pass" if score >= 0.9, "borderline" if 0.6 <= score < 0.9,
 otherwise "fail".
 
-Penalize: invented numbers, wrong thresholds, swapped conditions, answers not
-grounded in the source, hedged non-answers ("it depends" without the rule).
+Penalize (only when they touch a decisive fact): invented numbers, wrong
+thresholds, swapped conditions, hedged non-answers ("it depends" without the
+rule).
 
 ## Modes (prepended as the user message by the caller)
 
@@ -35,4 +53,5 @@ grounded in the source, hedged non-answers ("it depends" without the rule).
 - mode: candidate_grade — grade a candidate answer for the untainted
   acceptance set, comparing to the golden answer when provided.
 - mode: bench_grade — grade model answers on the held-out eval bench
-  (the release gate). Strict pass/fail against the reference.
+  (the release gate). Strict on the decisive facts of the reference; the
+  score is the extent to which the decisive facts are correct.

@@ -60,6 +60,47 @@ from two papers:
   the player pool passes ~100. The control gate, not reputation, remains the
   primary defence.
 
+## DeepCogito reasoning track (`training/reasoning/`)
+
+Learning track reproducing the open "reasoning post-training" recipe (Open-R1 /
+Cogito-style): SFT on teacher-distilled reasoning traces, then GRPO RL with a
+verifiable reward, then iterative refinement (IDA-lite). Runs on a single
+rented ~24GB GPU (Qwen2.5-3B default). Isolated from the backend; its deps
+(torch/trl/vllm) are training-only and do not touch the stdlib-only game loop.
+
+```
+training/reasoning/
+  formats.py     # <reasoning>/<answer> tags, parse + number-match helpers
+  rewards.py     # GRPO reward funcs (exact-match + format compliance)
+  teacher.py     # OpenAI-compatible teacher (OpenRouter; R1-0528 guard-block CoT)
+  distill.py     # teacher traces for GSM8K/MATH -> data/reasoning_*.jsonl
+                 #   (verifies each trace against the gold final answer)
+  prep_data.py   # merge + dedupe teacher batches -> data/reasoning_sft.jsonl
+  train_sft.py   # LoRA SFT on distilled traces
+  train_grpo.py  # GRPO RL with verifiable reward (LoRA)
+  merge.py       # merge LoRA adapter -> dense checkpoint for the next stage
+  eval_judge.py  # held-out accuracy (local HF model or OpenAI-compatible endpoint)
+  run_on_gpu.sh  # one-shot: SFT -> merge -> GRPO -> merge -> eval table
+  serve.sh       # vLLM entry point for evals / chat
+  requirements.txt
+```
+
+Runbook (from repo root; the scripts are `python -m` modules):
+
+```bash
+# macOS / any box with an OpenRouter key: build the SFT dataset
+python -m training.reasoning.distill --limit 200          # teacher traces (needs BASE_LLM_API_KEY)
+python -m training.reasoning.prep_data --inputs data/reasoning_sft.jsonl data/reasoning_sft_more.jsonl --max-rows 400
+# rented CUDA box (RunPod/Vast); repo synced to the box first
+bash training/reasoning/run_on_gpu.sh                    # SFT -> merge -> GRPO -> merge -> eval table
+# serve the final checkpoint for evals / chat
+training/reasoning/serve.sh
+```
+
+The month-1 deliverable is a before/after accuracy table (base vs SFT vs GRPO)
+on the same test split — a DeepCogito-style reasoning model trained on a
+rented GPU. Stage-2 process supervision reuses this same loop later.
+
 ## Architecture — file map
 
 ```
@@ -98,8 +139,13 @@ miniapp/index.html # single-file Telegram miniapp (works in browser too);
                    # sends X-Telegram-InitData when inside Telegram
 prompts/judge.md   # judge-model grading rubric
 training/
-  lora-config.yaml # LLaMA-Factory LoRA-SFT config
-  eval.py          # held-out bench eval, release-gate; records eval_runs
+  lora-config.yaml # LLaMA-Factory LoRA-SFT config (rented-GPU path)
+  train_lora.py    # minimal PEFT LoRA-SFT (r=64/alpha=128/all-linear) that
+                   # runs ON THIS MAC via MPS — mirrors lora-config.yaml;
+                   # `python -m training.train_lora --data data/crowd_sft.jsonl
+                   # --base Qwen/Qwen2.5-3B-Instruct --out outputs/crowd-lora`
+  eval.py          # held-out bench eval, release-gate; records eval_runs and
+                   # auto-settles rewards on release (see "Work-state markers")
 deploy/
   Caddyfile        # auto-HTTPS, serves miniapp/, /api/* → 127.0.0.1:8000
   crowdcheck.service  # systemd unit (venv uvicorn, EnvironmentFile=<REPO>/.env)
@@ -112,12 +158,15 @@ deploy/
 
 Verified by me end-to-end:
 - `python3 -m py_compile backend/*.py tools/*.py` — compiles clean.
-- Full loop smoke test (temp DB): corpus 22 items loaded → 14 accepted after
-  gate → epsilon-greedy groups made → settle credited 14 samples / 1 player →
-  export all 14 vs exclude-bench 11 (3 bench items' samples correctly held out).
+- Full loop smoke test (temp DB, back when the corpus was 22 items): 14
+  accepted after gate → epsilon-greedy groups made → settle credited 14
+  samples / 1 player → export all 14 vs exclude-bench 11 (3 bench items'
+  samples correctly held out). NOTE: corpus has since grown to 38 items /
+  24 gold (EU-023..EU-038 added); re-run split_bench and re-validate gate
+  numbers against the current corpus.jsonl before trusting these.
 - `tools/build_corpus.py` round-trip regenerates corpus byte-identical.
-- `tools/split_bench.py --kept 5` → 5 bench corpus_ids: EU-022, EU-013,
-  EU-019, EU-005, EU-004; corpus.jsonl stays full (22).
+- `tools/split_bench.py --kept 5` writes data/bench.jsonl without touching
+  corpus.jsonl (bench stays playable; excluded only at export time).
 - auth self-test (Telegram spec reimplemented independently): valid initData →
   verified; tampered / wrong-token / expired / empty → all rejected. NOTE:
   build test initData with `quote(value, safe="")` (encodeURIComponent → `%20`),
@@ -132,10 +181,10 @@ FastAPI creates the connection in the lifespan thread but executes sync
 endpoints in a threadpool; without it every request 500s.
 
 A `.venv` exists in the repo (created via `uv`; has fastapi/uvicorn + deps).
-`BASE_LLM_API_KEY` is NOT set in this environment, so `gold.warm()` will fail at
-server startup unless you stub the endpoint, point CORPUS_PATH at a corpus with
-no items, or set a real key. The smoke tests above deliberately avoid touching
-game.py's lifespan.
+A real API key IS configured in `.env` (OpenRouter) and the real-key pipeline
+run is done — but `.env` is gitignored and NOT in the repo, so a fresh clone
+needs it before `gold.warm()` at server startup. The smoke tests above
+deliberately avoid touching game.py's lifespan.
 
 ## Runbook
 
@@ -153,20 +202,20 @@ EOF
 
 ## Next moves (in rough priority)
 
-1. Wire `training/eval.py` (currently records eval_runs) to call
-   `reward.settle` automatically on a passing release run so payouts are
-   eval-gated by construction rather than manual.
-2. Confirm the demo play loop from the miniapp in a browser (real-key
-   backend validation is done; the miniapp UI itself hasn't been
-   click-tested against a live server yet).
-3. Grow control_right supply further if session variety still feels thin at
-   7 (see caveat below on golden_answer phrasing before adding more) — and/or
-   add more candidate/control_wrong material now that the citation-number
-   category is confirmed to reliably trip the base model.
+1. Confirm the demo play loop from the miniapp with a REAL browser (I
+   simulated the exact HTTP calls and static-served index.html; a headless or
+   desktop browser click-through is the remaining gap), ideally against the
+   deployed Caddy TLS endpoint.
+2. Real 7B release pass: export the same accepted samples and run
+   LLaMA-Factory/trl training + `training/eval.py --base Qwen/Qwen2.5-7B-Instruct`
+   on the rented GPU (this ties into the reasoning track's box). The local 3B
+   run proves the mechanics; the 7B run is the production pairing (game base).
+3. Grow data volume: real play sessions, then re-check bench; the 17-row
+   train set is demonstrative, not yet consequential for the domain model.
 4. Optional hardening exercises: concurrency test on the shared sqlite conn;
-   a `data/crowd_sft_valid.jsonl` validation step before LLaMA-Factory; an
+   a `data/crowd_sft_valid.jsonl` validation step before training; an
    integration test that drives game.py with a stubbed LLM endpoint so CI can
-   run the full loop without a key.
+   run the full loop without a key; a headless-browser e2e for the miniapp.
 
 ## Work-state markers
 
@@ -180,8 +229,111 @@ EOF
 - Corpus fact audit: DONE for the 3 originally-flagged items (EU-009 fixed
   1.5%→1%, EU-015 fixed a misleading "(the user under the Act)" gloss,
   EU-018 corroborated-not-verbatim, left as-is).
-- Not started: eval→settle wiring, miniapp click-test against a live server,
-  any actual model training or release.
+- eval.py→settle wiring on release: DONE (commit 6996994, plus the
+  base/tuned aliasing bug the wiring caught).
+- Judge-rubric strictness audit: DONE (see caveat at bottom). `prompts/judge.md`
+  now grades ONLY the decisive facts the question asks about: self-volunteered
+  extras (including a WRONG volunteer citation) no longer sink a correct core
+  answer; `gold.py`'s base system prompt no longer says "cite the controlling
+  rule" (it was inducing the citations that got penalized). Empirically
+  re-verified against the exact previously-failing pattern: same response
+  scores 1.0 pass now (was 0.5/fail before the fix), a decisive-fact error
+  still scores 0.0, fabricated in-topic extras score 0.8 borderline (still
+  blocked for gold use). Net effect: verified gold grew 7→10, more
+  control_right supply.
+- Live miniapp full-loop test: DONE (real server: poisoned-and-killed a stray
+  IPv6 `http.server` that was squatting :8000 so `localhost` missed uvicorn).
+  Drove the exact UI sequence (start → 10 answers → end × sessions +
+  leaderboard + static-serve of index.html = 200). The gate flips exactly
+  where designed: perfect-catch players push global posterior 0.5→0.8 in one
+clean session and acceptance begins; a sloppy all-flag player adds 2 false
+   alarms + 5 accepted at posterior 0.84 and co-punishes on payouts.
+   NOTE: test "players" (expert-demo/detective-demo/hunter-demo/novice-demo/
+   sloppy-demo) are simulated harnesses whose control decisions were
+  DB-guided (perfect detectives) — deliberately not naive, to exercise the
+  mechanics. Real naive behaviour is what the control gate exists for.
+- Actual LoRA training + release-gate pass: DONE on this Mac (MPS).
+  `train_lora.py` was written because LLaMA-Factory isn't installable here;
+  several real bugs surfaced and fixed along the way:
+    - MPS OOM was an accumulation bug in my first loop (one giant graph);
+      rewrote as per-batch grad accumulation + PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0.
+    - transformers 5.x `apply_chat_template` returns a dict, not a tensor
+      (`enc["input_ids"]` now), in eval.py.
+    - reward.distribute read the possibly-stale `players.reliability` column →
+      payouts were $0.00 unless /stage2/group had run; now computes reliability
+      inline from live taint_hits/false_alarms.
+    - bench regenerated (~1-in-5 of the grown 38-item corpus → 8 items:
+      EU-012/030/028/025/032/019/022/018). Adapter trained on 17 exported rows
+      (8 unique pairs) → outputs/crowd-lora (gitignored via outputs/).
+    - eval result: base=0.05 tuned=0.3375 delta=+0.2875 -> RELEASE. eval_run 1
+      recorded; auto-settle paid 2 players (hunter 0.929rel/20samples→$0.929,
+      sloppy 0.571rel/5samples→$0.143).
+- Not started: miniapp click-TEST driving a real browser (I simulated the
+  exact HTTP calls; no headless browser on hand), Telegram deploy to a real
+  host, training the real 7B (game base) on a GPU box — the local release
+  proves the mechanism on Qwen2.5-3B, not yet on the 7B the game serves.
+
+## Local training runbook (this Mac, no GPU box needed)
+
+```bash
+REQUIRE_TG_AUTH=false .venv/bin/python -m uvicorn backend.game:app --port 8000  # warms live items
+# play real sessions, then:
+python3 tools/split_bench.py --kept 5
+.venv/bin/python -m backend.export --exclude-bench
+PYTORCH_ENABLE_MPS_FALLBACK=1 PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0 \
+  .venv/bin/python -m training.train_lora --data data/crowd_sft.jsonl --base Qwen/Qwen2.5-3B-Instruct --out outputs/crowd-lora
+PYTORCH_ENABLE_MPS_FALLBACK=1 PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0 \
+  .venv/bin/python -m training.eval --base Qwen/Qwen2.5-3B-Instruct --adapter outputs/crowd-lora --max-new 128
+```
+
+Feature caveats confirmed live: 16GB MPS trains/evaluates Qwen2.5-3B LoRA fine
+(via PEFT, not trl — the trl path needs the GPU box per the reasoning track);
+a 7B in the same pattern would need the rented GPU.
+
+## Work-state markers (reasoning track)
+
+- Distillation: DONE for real. `data/reasoning_sft.jsonl` = 235 verified
+  GSM8K reasoning traces (56 via deepseek-r1-0528 + 203 via
+  deepseek-v3.2, deduped, avg reasoning ~274 chars). Teacher hits
+  OpenRouter via existing BASE_LLM_* env. cogito-v2.1-671b is NOT on
+  OpenRouter (404); default `TEACHER_MODEL` is now deepseek-r1-0528.
+- trl 1.13/transformers 5.17 API deltas (verified by running):
+  `SFTConfig`/`GRPOConfig` use `max_length` (not `max_seq_length`), no
+  `warmup_ratio`/`max_prompt_length`; trainers take `processing_class=`
+  (not `tokenizer=`); GRPO requires `generation_batch_size % num_generations
+  == 0`; reward funcs receive `prompts=/completions=/completion_ids=`
+  keyword args plus one kwarg per dataset column — `rewards.py` matches this.
+- Smoke tests: SFT and GRPO both run end-to-end on the Mac (CPU-forced;
+  small Qwen2.5-0.5B). Mac MPS + `pin_memory` segfaults in the trainer
+  weight-load path (local-only quirk; box is CUDA, bf16 auto-enabled via
+  `torch.cuda.is_available()`).
+- eval_judge.py is now schema-aware: auto-detects question column
+  (`problem`/`question`), auto-picks the match mode per row — "number"
+  (last-number equality via `<answer>` parsing; GSM8K-style `\n#### 42`
+  and pure-numeric refs) vs "string" (cleaned full-string equality for
+  symbolic MATH-500 answers). Verified no-model against real GSM8K +
+  MATH-500 rows (MATH first-100: 61 number / 39 string). `run_on_gpu.sh`
+  step [7/7] adds a MATH-500 eval (limit 100, `MATH_LIMIT` env) so the
+  before/after table is GSM8K + MATH ≥ twice the signal.
+- DONE — real GPU run (Vast 4090, 24GB, ~$2.2 total, month-1 deliverable):
+  `eval_{base,sft,grpo}.json` + `_math` in `training/reasoning/data/`:
+    - GSM8K(100): base 0.77 -> SFT 0.82 -> GRPO 0.79
+    - MATH-500(100): 0.39 / 0.39 / 0.38 (absolute MATH value INFLATED by
+      loose prose-tail number matching; only relative deltas meaningful here)
+  Takeaway: SFT on 235 distilled traces is a solid +5 on GSM8K. GRPO on top
+  slightly regressed (82->79) and is a format-drift effect: exact-match reward
+  on only 128 rows taught terser bare-number replies, flipping 7 rows (2 W, 5 L).
+- Box env lessons: runpod pytorch 2.4 image needs `pip install -U "torch>=2.5"`
+  for transformers 5.17, then `pip uninstall torchvision torchaudio` (stale
+  builtins crash under new torch). `run_on_gpu.sh` needs SCDIR-relative paths
+  (BASH_SOURCE-based REPO/SCDIR; checkpoints live under the *script* dir, not
+  repo). datasets 5.x refuses `openai/gsm8k` without explicit config name ->
+  eval_judge falls back to first config. transformers 5.17: use
+  `apply_chat_template(tokenize=False)` then tokenizer() for generate().
+- Ops: Vast key `~/.config/vastai/vast_api_key` + CLIs in `/tmp/pv` venv
+  (vastai 1.7.0). Instances sometimes exit with "resources unavailable";
+  keep them (do NOT destroy) and retry `vastai start instance <id>` — storage
+  only bills while stopped and the disk (with all checkpoints) persists.
 
 ## Caveats & decisions to respect
 

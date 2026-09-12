@@ -12,7 +12,7 @@ _HEADERS = {
     "Content-Type": "application/json",
 }
 _ENDPOINT = config.BASE_LLM_URL.rstrip("/") + "/chat/completions"
-_BASE_SYSTEM = "Answer the question concisely, directly, and only from the provided domain source. Cite the controlling rule or provision when possible."
+_BASE_SYSTEM = "Answer the question directly and concisely, only from the provided domain source."
 
 
 def chat(system: str, user: str, model: Optional[str] = None, json_mode: bool = False) -> str:
