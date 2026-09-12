@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 
 import httpx
 
@@ -22,13 +23,22 @@ R1_SYSTEM = (
 class Teacher:
     def __init__(self, model=None, timeout=120.0):
         self.model = model or config.TEACHER_MODEL
+        root = Path(__file__).resolve().parent
+        local = root / self.model
+        self._local_path = str(local) if local.exists() else None
+        self._local = None
+        self._tokenizer = None
+        self._timeout = timeout
+        if self._local_path:
+            return
         if not config.BASE_LLM_API_KEY:
             raise RuntimeError("BASE_LLM_API_KEY is not set")
         self._endpoint = config.BASE_LLM_URL.rstrip("/") + "/chat/completions"
         self._headers = {"Authorization": f"Bearer {config.BASE_LLM_API_KEY}"}
-        self._timeout = timeout
 
     def generate(self, question, temperature=0.7, max_tokens=1024, reasoning=False, retries=3):
+        if self._local_path:
+            return self._local_generate(question, temperature, max_tokens)
         r1 = self.model.split("/")[0] == "deepseek"
         payload = {
             "model": self.model,
@@ -58,6 +68,35 @@ class Teacher:
                     raise
                 time.sleep(3 * (attempt + 1))
         raise RuntimeError("teacher request failed")
+
+    def _local_generate(self, question, temperature=0.7, max_tokens=1024):
+        if self._local is None:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+
+            self._tokenizer = AutoTokenizer.from_pretrained(self._local_path)
+            self._local = AutoModelForCausalLM.from_pretrained(
+                self._local_path, torch_dtype=torch.bfloat16, device_map="auto"
+            )
+            self._local.eval()
+        messages = [
+            {"role": "system", "content": formats.TEACHER_SYSTEM},
+            {"role": "user", "content": question},
+        ]
+        prompt = self._tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs = self._tokenizer(prompt, return_tensors="pt").to(self._local.device)
+        with torch.no_grad():
+            out = self._local.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=True,
+                temperature=temperature,
+            )
+        return self._tokenizer.decode(
+            out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
+        ).strip()
 
     def _normalize_r1(self, content: str) -> str:
         if R1_MARKER not in content:
