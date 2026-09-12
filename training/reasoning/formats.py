@@ -12,6 +12,36 @@ TEACHER_SYSTEM = (
     f"{ANSWER_OPEN}\n...just the final numeric answer...\n{ANSWER_CLOSE}"
 )
 
+CONTROL_THINK = "/think"
+CONTROL_NO_THINK = "/no_think"
+
+CONTROL_SYSTEMS = {
+    CONTROL_THINK: TEACHER_SYSTEM,
+    CONTROL_NO_THINK: (
+        "You are a helpful assistant. Answer directly and tersely with just the "
+        f"final answer — no step-by-step reasoning. Return EXACTLY this shape:\n"
+        f"{ANSWER_OPEN}\n...the final answer...\n{ANSWER_CLOSE}"
+    ),
+}
+
+
+def render_control(control, question, style="system"):
+    if style == "token":
+        return f"{control}\n\n{question}"
+    return question
+
+
+def render_system(control, style="system"):
+    if style == "token":
+        return None
+    return CONTROL_SYSTEMS[control]
+
+
+def build_control_completion(control, reasoning, answer):
+    if control == CONTROL_NO_THINK:
+        return f"{ANSWER_OPEN}\n{answer.strip()}\n{ANSWER_CLOSE}"
+    return build_completion(reasoning, answer)
+
 
 def build_completion(reasoning: str, answer: str) -> str:
     return (

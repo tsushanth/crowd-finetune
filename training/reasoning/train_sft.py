@@ -1,5 +1,6 @@
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 
 import torch
@@ -23,6 +24,13 @@ def main():
     parser.add_argument("--seq-length", type=int, default=2048)
     parser.add_argument("--lora-rank", type=int, default=64)
     parser.add_argument("--lora-alpha", type=int, default=128)
+    parser.add_argument(
+        "--control-style",
+        choices=["system", "token"],
+        default="system",
+        help="how the /think vs /no_think control flag reaches the model; must "
+        "match eval_judge.py and how the checkpoint is served",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -36,20 +44,36 @@ def main():
     ]
     if not rows:
         raise SystemExit("no training rows; run distill.py first")
-    print(f"{len(rows)} training rows from {data_path}")
+    hybrid = any("control" in r for r in rows)
+    counts = Counter(
+        r.get("control", formats.CONTROL_THINK) for r in rows
+    ) if hybrid else None
+    print(f"{len(rows)} training rows from {data_path} {counts or '(single-mode)'}")
 
     tokenizer = AutoTokenizer.from_pretrained(args.base)
 
     def build_text(example):
-        messages = [
-            {"role": "user", "content": example["question"]},
+        control = example.get("control", formats.CONTROL_THINK)
+        messages = []
+        system = formats.render_system(control, args.control_style)
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append(
+            {
+                "role": "user",
+                "content": formats.render_control(
+                    control, example["question"], args.control_style
+                ),
+            }
+        )
+        messages.append(
             {
                 "role": "assistant",
-                "content": formats.build_completion(
-                    example["reasoning"], example["answer"]
+                "content": formats.build_control_completion(
+                    control, example.get("reasoning", ""), example["answer"]
                 ),
-            },
-        ]
+            }
+        )
         return {
             "text": tokenizer.apply_chat_template(messages, tokenize=False)
         }
