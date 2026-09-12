@@ -8,6 +8,10 @@ from peft import LoraConfig
 from transformers import AutoTokenizer
 from trl import SFTConfig, SFTTrainer
 
+import trl.trainer.sft_trainer as _sft_trainer
+
+_sft_trainer._patch_chunked_ce_lm_head = lambda target, **kwargs: None
+
 from . import formats
 
 
@@ -69,6 +73,7 @@ def main():
         truncation_mode="keep_start",
         dataset_text_field="text",
         packing=False,
+        loss_type="nll",
         logging_steps=10,
         save_steps=200,
         max_grad_norm=1.0,

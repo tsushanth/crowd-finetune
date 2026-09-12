@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO"
@@ -8,12 +10,14 @@ cd "$REPO"
 BASE="${BASE:-Qwen/Qwen2.5-3B-Instruct}"
 DATA="${DATA:-data/reasoning_sft.jsonl}"
 OUT="outputs"
+SFT_BATCH="${SFT_BATCH:-2}"
+SFT_SEQ="${SFT_SEQ:-1024}"
 
 echo "[1/6] deps"
 python -m pip install -q -r training/reasoning/requirements.txt
 
 echo "[2/6] SFT on distilled traces (${DATA})"
-python -m training.reasoning.train_sft --base "$BASE" --data "$DATA"
+python -m training.reasoning.train_sft --base "$BASE" --data "$DATA" --batch "$SFT_BATCH" --grad-accum 16 --seq-length "$SFT_SEQ"
 
 echo "[3/6] merge SFT adapter"
 python -m training.reasoning.merge \
