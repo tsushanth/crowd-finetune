@@ -166,8 +166,11 @@ def main() -> None:
 
     for model_id in competitors:
         api_stats = {"prompt_tokens": 0, "out_tokens": 0}
-        api_score = score(api_generator(model_id, api_stats), model_id)
-        add_api(model_id, api_score, api_stats)
+        try:
+            api_score = score(api_generator(model_id, api_stats), model_id)
+            add_api(model_id, api_score, api_stats)
+        except Exception as exc:
+            print(f"competitor {model_id} failed: {exc}")
 
     print()
     print(f"{'model':<42}{'score':>8}{'$/1K q':>10}{'tok/q':>8}{'tps':>10}")
