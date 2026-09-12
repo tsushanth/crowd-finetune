@@ -35,6 +35,11 @@ def main():
         help="test = unit-test fraction only; test+format = add a small "
         "formatting bonus for <reasoning>/<answer> structure",
     )
+    parser.add_argument(
+        "--device", choices=["auto", "cpu"], default="cpu",
+        help="cpu avoids transformers 5.17's MPS default (MPS + pin_memory "
+        "segfaults on this Mac); auto keeps the default device",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -83,6 +88,7 @@ def main():
         reward_funcs.append(rewards.code_format_reward)
 
     grpo_config = GRPOConfig(
+        use_cpu=args.device == "cpu",
         output_dir=str(output_dir),
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch,

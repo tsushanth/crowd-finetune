@@ -23,6 +23,11 @@ def main():
     parser.add_argument("--seq-length", type=int, default=2048)
     parser.add_argument("--lora-rank", type=int, default=64)
     parser.add_argument("--lora-alpha", type=int, default=128)
+    parser.add_argument(
+        "--device", choices=["auto", "cpu"], default="cpu",
+        help="cpu avoids transformers 5.17's MPS default (MPS + pin_memory "
+        "segfaults on this Mac); auto keeps the default device",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -57,6 +62,7 @@ def main():
     tokenizer.pad_token = tokenizer.eos_token
 
     sft_config = SFTConfig(
+        use_cpu=args.device == "cpu",
         output_dir=str(output_dir),
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch,

@@ -7,10 +7,12 @@ from backend import config
 
 from . import formats
 
+DEFAULT_TEACHER = "deepseek/deepseek-v3.2"
+
 
 class Teacher:
     def __init__(self, model=None, timeout=180.0):
-        self.model = model or config.TEACHER_MODEL
+        self.model = model or DEFAULT_TEACHER
         root = Path(__file__).resolve().parent
         local = root / self.model
         self._local_path = str(local) if local.exists() else None

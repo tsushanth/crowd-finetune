@@ -13,6 +13,7 @@ data/corpus.jsonl
 data/crowd_sft.jsonl
 data/crowd_sft_weighted.jsonl
 data/candidate_labels.json
+data/code_*.json
 outputs/
 training/reasoning/data/
 training/reasoning/outputs/

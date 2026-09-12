@@ -220,7 +220,7 @@ def main() -> None:
         tps_s = f"{tps:.0f}" if tps else "-"
         print(f"{label:<46}{run_score:>8.4f}{cost_s:>10}{per_query:>8.0f}{tps_s:>10}")
 
-    out = root / args.out
+    out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
         json.dumps(

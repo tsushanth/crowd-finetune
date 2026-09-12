@@ -369,3 +369,62 @@ a 7B in the same pattern would need the rented GPU.
   numbers, all confidently stated. Yes/no-restatement questions (this model
   confirming a stated fact rather than recalling a citation cold) verify far
   more reliably — that's the actual "easy" category, not citation lookups.
+
+## code-repair track (branch `niche/code-repair`, worktree crowd-finetune-coderepair)
+
+Second niche, phase 1 built and smoke-verified end-to-end: verifiable code
+generation where the reward is a MECHANICAL unit-test pass/fail (no LLM judge).
+Given a docstring/signature + unit tests (HumanEval/MBPP-style), the model
+generates a full function def inside `<reasoning>/<answer>` tags; a hardened
+subprocess sandbox runs the tests per completion, isolated from the training
+loop. SFT on test-verified teacher traces, then GRPO with the test-pass reward.
+Phase-2 variant (buggy fn + failing test + trace -> patch) is NOT built yet.
+
+Files: `training/coderepair/{sandbox,formats,rewards,teacher,datasets,distill,
+prep_data,train_sft,train_grpo,eval_code}.py`, `run_on_gpu.sh`,
+`requirements.txt`. Reuses `training/reasoning/{formats,merge,requirements}`.
+
+Real numbers from the CPU smoke (this Mac, no GPU box):
+- sandbox battery 15/15: correct/wrong/syntax/loop(timeout)/socket/fs-write/
+  os.system/os.fork/subprocess/urllib/ctypes.native/env-write/tempfile all
+  behave; 0 host-filesystem escapes. Wrapper isolates candidate stdout via
+  `os.dup2` -> /dev/null (a printing candidate corrupted result parsing before
+  the fix). CPU infinite loops are bounded by the subprocess timeout, not the
+  rlimit (rlimit is a second net, do not rely on alarm alone).
+- datasets: `openai/openai_humaneval` NEEDS the `openai/` namespace (bare id
+  404s on hub 5.x). 164 problems; seed 42 split -> 156 train / 8 eval
+  (`--eval-size 8`). Train questions embed the rendered tests; eval questions
+  keep the original prompt only (tests hidden). MBPP loader written but not
+  part of the smoke.
+- distill: 10/12 (83%) teacher traces kept after sandbox verification.
+  deepseek-r1-0528 402s on long outputs (OpenRouter credits ran dry; after
+  top-up it still doesn't hold the code tag shape) -> coderepair teacher
+  default is now deepseek/deepseek-v3.2 (DEFAULT_TEACHER), NOT
+  config.TEACHER_MODEL. Trace schema: question/reasoning/answer/tests/
+  entry_point/imports/source.
+- SFT: Qwen2.5-0.5B-Instruct, 4 traces, 1 epoch, CPU -> loss 1.633, ~78s.
+  Then merge.py adapter -> dense checkpoint before GRPO (GRPOTrainer loads a
+  dense base, NOT a LoRA dir).
+- transformers 5.17 on this Mac defaults the trainer device to MPS and
+  MPS+pin_memory segfaults in the weight-load path -> train_sft.py /
+  train_grpo.py gained `--device {cpu,auto}` (use_cpu), default cpu. CUDA
+  boxes: `--device auto` sets bf16=True via torch.cuda.is_available().
+- GRPO: 4 rows x 2 gens, viable end-to-end (generation -> sandbox ->
+  reward -> step) but max_completion=256 clipped EVERY completion
+  (clipped_ratio 1.0) -> flat reward -1, ~0 gradient (loss 0.1248, 188s).
+  Real runs must keep max_completion >= 1024 so code + closing tags finish.
+- eval baseline (eval-8, pass@1): Qwen2.5-3B base 0.625, openai/gpt-4o-mini
+  0.75, anthropic/claude-3-haiku 0.75. Local 3B was CPU (48 tok/s); the
+  tuned-model row needs `--adapter` (smoke compared base vs base).
+- Path conventions (verified): datasets.py writes to repo-root `data/`;
+  distill.py and train_*.py resolve `--data/--out` package-relative under
+  `training/coderepair/` (data/code_sft.jsonl etc. live there);
+  eval_code.py `--out` is now CWD-relative (default repos-root data/).
+  merge.py `--output` must be an ABSOLUTE path (it resolves relative to
+  training/reasoning/ and silently nests junk dirs otherwise).
+
+Ship shape: not yet shipped. GPU run (run_on_gpu.sh) unvalidated; needed:
+top-up the dataset to ~120 HumanEval + MBPP traces, train SFT+GRPO on the
+rented box, eval pass@1 vs the competitor table above, then decide the
+release gate. Semi-open items: MBPP entry_point extraction, the harder
+repair variant, eval on MBPP (MBPP tests stay in-prompt on this box).
