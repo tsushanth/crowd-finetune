@@ -195,12 +195,12 @@ def is_correct(emitted: str, item: dict) -> dict:
     if kind == "invalid":
         result["reason"] = "unparseable function-call JSON"
         return result
-    if kind == "empty":
+    if kind in ("empty", "decline"):
         if expects_decline(item):
             result["correct"] = True
-            result["reason"] = "emitted no tool call and decline (null) was expected"
+            result["reason"] = "correctly declined; no tool fits"
         else:
-            result["reason"] = "emitted no tool call but a call was expected"
+            result["reason"] = f"declined but a call to {expected(item).get('tool')!r} was expected"
         return result
     if expects_decline(item):
         result["reason"] = f"called {parsed['tool']!r} but no tool fits (decline expected)"

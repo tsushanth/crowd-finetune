@@ -35,15 +35,19 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--kept", type=int, default=5)
+    ap.add_argument("--corpus", default=str(CORPUS_PATH))
+    ap.add_argument("--bench", default=str(BENCH_PATH))
     args = ap.parse_args()
+    corpus_path = Path(args.corpus)
+    bench_path = Path(args.bench)
     if args.kept < 1:
         raise SystemExit(f"--kept must be >= 1, got {args.kept}")
-    corpus = load_jsonl(CORPUS_PATH)
+    corpus = load_jsonl(corpus_path)
     rng = random.Random(42)
     shuffled = list(corpus)
     rng.shuffle(shuffled)
     bench = shuffled[:: args.kept]
-    write_jsonl(BENCH_PATH, bench)
+    write_jsonl(bench_path, bench)
     print(f"corpus total: {len(corpus)}")
     print(f"bench count: {len(bench)}")
     print(f"bench corpus_ids: {', '.join(r['corpus_id'] for r in bench)}")

@@ -71,6 +71,21 @@ def load_corpus() -> list[dict]:
     return rows
 
 
+_NICHE_TOOLCALL = "tool-call"
+
+
+def _toolcall():
+    from . import toolcall
+
+    return toolcall
+
+
+def is_correct(niche: str, emitted: str, item: dict) -> bool:
+    if niche == _NICHE_TOOLCALL:
+        return _toolcall().is_correct(emitted, item)["correct"]
+    return judge("verify_gold", item["question"], emitted, item.get("golden_answer"))["pass"]
+
+
 def warm(conn, limit: Optional[int] = None) -> None:
     corpus = load_corpus()
     if limit:
@@ -83,21 +98,34 @@ def warm(conn, limit: Optional[int] = None) -> None:
         if row["corpus_id"] in done:
             continue
         question = row["question"]
+        niche = row.get("niche", "demo")
         is_gold = int(row.get("is_gold", 0))
         golden = row.get("golden_answer")
-        base_response = base_answer(question)
+        payload = row.get("payload")
         tainted_reference = None
         base_verified = 0
-        if is_gold and golden:
-            check = judge("verify_gold", question, base_response, golden)
-            base_verified = int(check["pass"])
-            if base_verified:
-                tainted_reference = taint_answer(question, golden)
+        if niche == _NICHE_TOOLCALL:
+            tc = _toolcall()
+            base_response = tc.base_answer(row)
+            if is_gold and payload:
+                check = tc.is_correct(base_response, row)
+                base_verified = int(check["correct"])
+                if base_verified and tc.expects_decline(row):
+                    base_verified = int(tc.judge_decline(row)["pass"])
+                if base_verified:
+                    tainted_reference = tc.taint_answer(row)
+        else:
+            base_response = base_answer(question)
+            if is_gold and golden:
+                check = judge("verify_gold", question, base_response, golden)
+                base_verified = int(check["pass"])
+                if base_verified:
+                    tainted_reference = taint_answer(question, golden)
         conn.execute(
-            "INSERT INTO items (corpus_id, niche, question, source, golden_answer, is_gold, base_verified, base_response, tainted_reference) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO items (corpus_id, niche, question, source, golden_answer, is_gold, base_verified, base_response, tainted_reference, payload) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 row["corpus_id"],
-                row.get("niche", "demo"),
+                niche,
                 question,
                 row.get("source", ""),
                 golden,
@@ -105,6 +133,7 @@ def warm(conn, limit: Optional[int] = None) -> None:
                 base_verified,
                 base_response,
                 tainted_reference,
+                payload if isinstance(payload, str) else (json.dumps(payload, ensure_ascii=False) if payload else None),
             ),
         )
     conn.commit()

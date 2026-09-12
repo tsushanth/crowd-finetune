@@ -32,6 +32,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     ):
         if col not in cols:
             conn.execute(ddl)
+    icols = {r["name"] for r in conn.execute("PRAGMA table_info(items)").fetchall()}
+    if "payload" not in icols:
+        conn.execute("ALTER TABLE items ADD COLUMN payload TEXT")
 
 
 def get_or_create_player(conn: sqlite3.Connection, tg_user_id: str) -> dict:

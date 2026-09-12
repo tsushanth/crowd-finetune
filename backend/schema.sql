@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS items (
   base_verified INTEGER NOT NULL DEFAULT 0,
   base_response TEXT,
   tainted_reference TEXT,
+  payload TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

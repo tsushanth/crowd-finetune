@@ -55,24 +55,21 @@ def fp(text: str) -> str:
 
 def candidate_truth(rconn: sqlite3.Connection) -> dict[int, bool]:
     rows = rconn.execute(
-        "SELECT id, question, golden_answer, base_response FROM items WHERE is_gold = 0"
+        "SELECT id, niche, question, golden_answer, base_response, payload FROM items WHERE is_gold = 0"
     ).fetchall()
     cache = {}
     if LABELS_PATH.exists():
         cache = json.loads(LABELS_PATH.read_text())
     changed = False
     truth = {}
-    for row in rows:
+    for raw in rows:
+        row = dict(raw)
         label = cache.get(str(row["id"]))
         key = fp(row["base_response"])
         if label and label["fp"] == key:
             truth[row["id"]] = bool(label["base_correct"])
             continue
-        base_correct = False
-        if row["golden_answer"]:
-            base_correct = bool(
-                gold.judge("verify_gold", row["question"], row["base_response"], row["golden_answer"])["pass"]
-            )
+        base_correct = gold.is_correct(row["niche"], row["base_response"], row)
         cache[str(row["id"])] = {"fp": key, "base_correct": base_correct}
         truth[row["id"]] = base_correct
         changed = True
