@@ -10,6 +10,10 @@ OUT="outputs"
 EVAL_SIZE="${EVAL_SIZE:-24}"
 GRPO_LIMIT="${GRPO_LIMIT:-128}"
 GRPO_MAX="${GRPO_MAX_COMPLETION:-1024}"
+SFT_DIR="$SCDIR/$OUT/code-sft"
+SFT_MERGED="$SCDIR/$OUT/code-sft-merged"
+GRPO_DIR="$SCDIR/$OUT/code-grpo"
+GRPO_MERGED="$SCDIR/$OUT/code-grpo-merged"
 
 echo "[1/9] deps"
 python -m pip install -q -r training/coderepair/requirements.txt
@@ -25,38 +29,39 @@ else
 fi
 
 echo "[4/9] SFT on test-verified traces"
-python -m training.coderepair.train_sft --base "$BASE"
+python -m training.coderepair.train_sft --base "$BASE" --output "$SFT_DIR"
 
 echo "[5/9] merge SFT adapter"
 python -m training.reasoning.merge \
   --base "$BASE" \
-  --adapter "$OUT/code-sft" \
-  --output "$OUT/code-sft-merged"
+  --adapter "$SFT_DIR" \
+  --output "$SFT_MERGED"
 
 if [ -z "${SKIP_GRPO:-}" ]; then
   echo "[6/9] GRPO RL (unit-test reward, ${GRPO_LIMIT} prompts)"
   python -m training.coderepair.train_grpo \
-    --base "$OUT/code-sft-merged" \
-    --limit "$GRPO_LIMIT" --gens 8 --batch 4 --max-completion "$GRPO_MAX"
+    --base "$SFT_MERGED" \
+    --limit "$GRPO_LIMIT" --gens 8 --batch 4 --max-completion "$GRPO_MAX" \
+    --device auto
 
-  GRPO_CKPT="$(ls -d "$SCDIR/$OUT/code-grpo"/checkpoint-* 2>/dev/null | sort -V | tail -1)"
+  GRPO_CKPT="$(ls -d "$GRPO_DIR"/checkpoint-* 2>/dev/null | sort -V | tail -1)"
   test -n "$GRPO_CKPT"
 
   echo "[7/9] merge GRPO ($GRPO_CKPT)"
   python -m training.reasoning.merge \
-    --base "$OUT/code-sft-merged" \
+    --base "$SFT_MERGED" \
     --adapter "$GRPO_CKPT" \
-    --output "$OUT/code-grpo-merged"
+    --output "$GRPO_MERGED"
 fi
 
 echo "[8/9] held-out pass@1: base vs SFT vs GRPO"
 python -m training.coderepair.eval_code --model "$BASE"                    --out "data/code_eval_base.json"
-python -m training.coderepair.eval_code --model "$OUT/code-sft-merged"    --out "data/code_eval_sft.json"
+python -m training.coderepair.eval_code --model "$SFT_MERGED"              --out "data/code_eval_sft.json"
 if [ -z "${SKIP_GRPO:-}" ]; then
-  python -m training.coderepair.eval_code --model "$OUT/code-grpo-merged" --out "data/code_eval_grpo.json"
+  python -m training.coderepair.eval_code --model "$GRPO_MERGED"           --out "data/code_eval_grpo.json"
 fi
 
 echo "[9/9] baseline comparison: tuned-3B vs GPT-4o-mini vs Claude Haiku"
-python -m training.coderepair.eval_code --model "$OUT/code-sft-merged" --competitor --out "data/code_eval_table.json"
+python -m training.coderepair.eval_code --model "$SFT_MERGED" --competitor --out "data/code_eval_table.json"
 
 echo "DONE. Compare the pass@1 columns."
