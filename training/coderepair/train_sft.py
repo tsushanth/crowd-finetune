@@ -24,9 +24,10 @@ def main():
     parser.add_argument("--lora-rank", type=int, default=64)
     parser.add_argument("--lora-alpha", type=int, default=128)
     parser.add_argument(
-        "--device", choices=["auto", "cpu"], default="cpu",
-        help="cpu avoids transformers 5.17's MPS default (MPS + pin_memory "
-        "segfaults on this Mac); auto keeps the default device",
+        "--device", choices=["auto", "cpu"], default="auto",
+        help="cpu forces use_cpu (macOS MPS + pin_memory segfaults in the "
+        "weight-load path; pass --device cpu on this Mac); auto uses CUDA "
+        "when available",
     )
     args = parser.parse_args()
 
