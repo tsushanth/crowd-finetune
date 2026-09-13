@@ -42,7 +42,7 @@ def load_humaneval(offset=0, limit=None):
 
 
 def load_mbpp(offset=0, limit=None):
-    ds = load_dataset("google-research-datasets/mbpp", "full", split="train")
+    ds = load_dataset("google-research-datasets/mbpp", "sanitized", split="train")
     rows = []
     for ex in ds.select(range(offset, min(limit or len(ds), len(ds)))):
         rows.append(

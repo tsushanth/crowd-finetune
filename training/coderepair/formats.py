@@ -16,6 +16,38 @@ CODE_SYSTEM = (
     "Put nothing but the code inside the " + ANSWER_OPEN + " tags."
 )
 
+REPAIR_SYSTEM = (
+    "You are a Python engineer debugging existing code. A developer wrote a "
+    "function that has a bug, and the unit tests below fail on it. "
+    "Think through the bug inside " + REASONING_OPEN + "..." + REASONING_CLOSE + ", "
+    "then output the COMPLETE corrected Python function definition (def line "
+    "included, no further imports unless required) inside "
+    + ANSWER_OPEN + "..." + ANSWER_CLOSE + ". "
+    "The corrected code must be runnable on its own and pass every listed "
+    "unit test. Put nothing but the corrected code inside the "
+    + ANSWER_OPEN + " tags."
+)
+
+TEST_MARK = "\n\nUnit tests the implementation must satisfy:"
+
+
+def strip_tests_from_question(question):
+    return question.split(TEST_MARK)[0].strip()
+
+
+def build_repair_question(docstring, buggy_code, tests):
+    lines = "\n".join(tests)
+    return (
+        strip_tests_from_question(docstring)
+        + "\n\nA developer wrote the following solution, but it has a bug and "
+        "the unit tests below fail on it. Find the bug and fix it.\n\n"
+        "Buggy solution:\n```python\n"
+        + buggy_code
+        + "\n```\n\nUnit tests that must pass:\n```python\n"
+        + lines
+        + "\n```"
+    )
+
 
 def build_completion(reasoning, code):
     return _r.build_completion(reasoning, code)

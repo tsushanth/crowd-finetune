@@ -56,7 +56,7 @@ def main():
 
     def prepare(example):
         prompt = tokenizer.apply_chat_template(
-            [{"role": "system", "content": formats.CODE_SYSTEM},
+            [{"role": "system", "content": example.get("system") or formats.CODE_SYSTEM},
              {"role": "user", "content": example["question"]}],
             tokenize=False,
             add_generation_prompt=True,

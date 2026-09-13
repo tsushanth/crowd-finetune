@@ -11,8 +11,9 @@ DEFAULT_TEACHER = "deepseek/deepseek-v3.2"
 
 
 class Teacher:
-    def __init__(self, model=None, timeout=180.0):
+    def __init__(self, model=None, timeout=180.0, system=None):
         self.model = model or DEFAULT_TEACHER
+        self.system = system or formats.CODE_SYSTEM
         root = Path(__file__).resolve().parent
         local = root / self.model
         self._local_path = str(local) if local.exists() else None
@@ -32,7 +33,7 @@ class Teacher:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": formats.CODE_SYSTEM},
+                {"role": "system", "content": self.system},
                 {"role": "user", "content": question},
             ],
             "temperature": temperature,
@@ -67,7 +68,7 @@ class Teacher:
             )
             self._local.eval()
         messages = [
-            {"role": "system", "content": formats.CODE_SYSTEM},
+            {"role": "system", "content": self.system},
             {"role": "user", "content": question},
         ]
         prompt = self._tokenizer.apply_chat_template(

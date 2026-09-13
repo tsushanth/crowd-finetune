@@ -48,7 +48,7 @@ def main():
 
     def build_text(example):
         messages = [
-            {"role": "system", "content": formats.CODE_SYSTEM},
+            {"role": "system", "content": example.get("system") or formats.CODE_SYSTEM},
             {"role": "user", "content": example["question"]},
             {
                 "role": "assistant",

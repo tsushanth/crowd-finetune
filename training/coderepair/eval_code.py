@@ -120,7 +120,9 @@ def main() -> None:
         samples = []
         for _ in range(k):
             stats["prompt_tokens"] += len(tokenizer.encode(" ".join(m["content"] for m in prompt)))
-            answer = gold.chat(formats.CODE_SYSTEM, user, model=row["model"]).strip()
+            answer = gold.chat(
+                (row.get("system") or formats.CODE_SYSTEM), user, model=row["model"]
+            ).strip()
             stats["out_tokens"] += len(tokenizer.encode(answer))
             samples.append(answer)
         return samples
@@ -134,7 +136,7 @@ def main() -> None:
 
     prompts = [
         [
-            {"role": "system", "content": formats.CODE_SYSTEM},
+            {"role": "system", "content": row.get("system") or formats.CODE_SYSTEM},
             {"role": "user", "content": row["question"]},
         ]
         for row in rows
