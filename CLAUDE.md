@@ -433,12 +433,24 @@ Real numbers from the CPU smoke (this Mac, no GPU box):
   merge.py `--output` must be an ABSOLUTE path (it resolves relative to
   training/reasoning/ and silently nests junk dirs otherwise).
 
-Ship shape: not yet shipped. GPU run (run_on_gpu.sh) unvalidated; remaining:
-SFT+GRPO on the rented box over the 77-trace HumanEval set, eval pass@1 vs the
-competitor table above, then decide the release gate. Box-run caveats: (a)
-`run_on_gpu.sh` re-materializes the dataset at `EVAL_SIZE` (default 24) -> set
-`EVAL_SIZE=50` and `SKIP_DISTILL=1` to match the local 114/50 split + local
-traces; (b) the SFT file is gitignored, so rsync training/coderepair/data/
-alongside the git sync; (c) merge.py `--output` must be absolute. Semi-open
-items: MBPP entry_point extraction, the harder repair variant, eval on MBPP
-(MBPP tests stay in-prompt on this box).
+Ship shape: not yet shipped. GPU run (run_on_gpu.sh) partially verified
+(static + split-determinism; box not yet run). Verified: `bash -n` clean;
+`datasets.py --eval-size 50 --seed 42` with datasets 5.0.1 reproduces the
+committed 114/50 split byte-for-byte; merge.py payloads are absolute
+(SCDIR-derived); eval_code uses REPO-root data/code_eval.jsonl + CWD-relative
+outs; GRPO config matches the smoke (batch4 x gens8 -> gen_batch 32 %8=0,
+max_completion 1024). Bug found + fixed (commit cbfa68e): step [4/9] ran
+train_sft WITHOUT `--device auto` and train_sft defaults to cpu -> SFT would
+train on CPU on the box. Remaining before a real run: (a) `run_on_gpu.sh`
+re-materializes the dataset at `EVAL_SIZE` (default 24) -> run with
+`EVAL_SIZE=50` and `SKIP_DISTILL=1` to use the local 77-trace SFT file; (b)
+the SFT file is gitignored, so rsync training/coderepair/data/ alongside the
+git sync; (c) merge.py `--output` must be absolute (already satisfied); (d)
+.env needs syncing only for the competitor table (step 9/9, non-fatal if
+absent). BOX OPS: the dedicated code-repair instance (50816036) was reaped
+by Vast while a start was queued ("resources unavailable") -> its disk is
+gone; remaining viable boxes are cogito-3b (50776324, rmts runpod/pytorch
+with matching pinned deps) / cogito-7b / rlhf-lab. Either re-provision a
+fresh code-repair box or reuse cogito-3b (same repo family; SCDIR-relative
+checkpoints won't collide). Semi-open items: MBPP entry_point extraction, the
+harder repair variant, eval on MBPP (MBPP tests stay in-prompt on this box).
