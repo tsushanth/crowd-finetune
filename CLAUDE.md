@@ -433,24 +433,42 @@ Real numbers from the CPU smoke (this Mac, no GPU box):
   merge.py `--output` must be an ABSOLUTE path (it resolves relative to
   training/reasoning/ and silently nests junk dirs otherwise).
 
-Ship shape: not yet shipped. GPU run (run_on_gpu.sh) partially verified
-(static + split-determinism; box not yet run). Verified: `bash -n` clean;
-`datasets.py --eval-size 50 --seed 42` with datasets 5.0.1 reproduces the
-committed 114/50 split byte-for-byte; merge.py payloads are absolute
-(SCDIR-derived); eval_code uses REPO-root data/code_eval.jsonl + CWD-relative
-outs; GRPO config matches the smoke (batch4 x gens8 -> gen_batch 32 %8=0,
-max_completion 1024). Bug found + fixed (commit cbfa68e): step [4/9] ran
-train_sft WITHOUT `--device auto` and train_sft defaults to cpu -> SFT would
-train on CPU on the box. Remaining before a real run: (a) `run_on_gpu.sh`
-re-materializes the dataset at `EVAL_SIZE` (default 24) -> run with
-`EVAL_SIZE=50` and `SKIP_DISTILL=1` to use the local 77-trace SFT file; (b)
-the SFT file is gitignored, so rsync training/coderepair/data/ alongside the
-git sync; (c) merge.py `--output` must be absolute (already satisfied); (d)
-.env needs syncing only for the competitor table (step 9/9, non-fatal if
-absent). BOX OPS: the dedicated code-repair instance (50816036) was reaped
-by Vast while a start was queued ("resources unavailable") -> its disk is
-gone; remaining viable boxes are cogito-3b (50776324, rmts runpod/pytorch
-with matching pinned deps) / cogito-7b / rlhf-lab. Either re-provision a
-fresh code-repair box or reuse cogito-3b (same repo family; SCDIR-relative
-checkpoints won't collide). Semi-open items: MBPP entry_point extraction, the
-harder repair variant, eval on MBPP (MBPP tests stay in-prompt on this box).
+FULL GPU RUN DONE (RTX 4090, runpod/pytorch 2.4.0 + torch 2.14.0+cu130,
+transformers 5.17.0, trl 1.13.0; on-demand instance 50824587, ~$0.87/hr,
+~1.5h incl. setup -> ~$1.3 billed + OpenRouter distill/competitor spend).
+Pipeline data/code_train.jsonl (114) + data/code_eval.jsonl (50), SFT on the
+77 test-verified traces, GRPO on 60 train prompts x 8 gens, eval as pass@1 on
+the 50 hidden-test eval rows. REAL NUMBERS:
+- SFT (Qwen2.5-3B-Instruct LoRA, 77 rows x 2 epochs, batch4/ga8): loss 0.2118.
+  Slow-ish on 4090 (~54 min, 6 steps): eager attention at seq 2048; no flash
+  attn installed = expected.
+- GRPO: rewards/_reward_call mean 0.79 -> 0.83 across steps, std ~0.19-0.27
+  (the test-pass reward DISCRIMINATES); completions mean_length ~274-299 (
+  terminated, clipped_ratio 0, no max_completion clips); loss 0.875 -> 1.65;
+  KL small (lr on the merge: ~1e-10 scale at the tail = fine).
+- pass@1 on 50 eval rows: Qwen2.5-3B base 0.52, SFT-merged 0.52,
+  GRPO-merged 0.52, openai/gpt-4o-mini 0.68, anthropic/claude-3-haiku 0.56.
+  Coins flat: with 77 SFT traces + 60-prompt GRPO the tuned models neither
+  gained nor lost vs base (0.52). gpt-4o-mini is the ceiling on this eval. A
+  bigger trace set and/or repair-style (phase 2) is where headroom likely is;
+  verdict: pipeline is sound, signal is absent at this data/RL scale.
+- Bugs the box run caught (both fixed + committed): (1) train_sft.py /
+  train_grpo.py defaulted `--device cpu` (the Mac MPS workaround) and
+  run_on_gpu.sh step [4] didn't pass `--device auto` -> SFT trained the 3B on
+  CPU (964% CPU spin, 0% GPU). Default changed to `auto`; pass `--device cpu`
+  on this Mac. (2) GRPO OOM'd the 24GB 4090 with batch4 x gens8: policy +
+  frozen ref = 2x 3B bf16 (~13GB) + a 32-rollout padded gen batch blew past
+  24GB at the backward. Fixed: batch 1 (8 rollouts/step) +
+  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True -> peaks ~16.9GB.
+- Instance state: 50824587 STOPPED (storage-only billing; disk holds
+  code-sft-merged / code-grpo-merged checkpoints + run.log under
+  /workspace/coderepair/outputs*). Do NOT destroy until checkpoints are
+  pulled or re-run is planned; stopping keeps them.
+- Eval artifacts pulled back to repo-root data/code_eval_{base,sft,grpo,
+  table}.json (gitignored). run_on_gpu.sh is re-runnable idempotently on the
+  stopped box (start instance -> re-ssh; steps [1-5] are fast).
+- Verified pre-run (unchanged): `bash -n` clean; datasets split reproduces
+  byte-for-byte; eval_code CWD-relative outs; merge absolute outputs.
+Semi-open items: MBPP entry_point extraction, the harder repair variant
+(phase 2), eval on MBPP, and pushing data/RL scale until the tuned models
+clear base 0.52.
