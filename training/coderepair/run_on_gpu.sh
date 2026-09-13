@@ -29,7 +29,7 @@ else
 fi
 
 echo "[4/9] SFT on test-verified traces"
-python -m training.coderepair.train_sft --base "$BASE" --output "$SFT_DIR"
+python -m training.coderepair.train_sft --base "$BASE" --output "$SFT_DIR" --device auto
 
 echo "[5/9] merge SFT adapter"
 python -m training.reasoning.merge \
