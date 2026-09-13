@@ -323,6 +323,33 @@ a 7B in the same pattern would need the rented GPU.
   Takeaway: SFT on 235 distilled traces is a solid +5 on GSM8K. GRPO on top
   slightly regressed (82->79) and is a format-drift effect: exact-match reward
   on only 128 rows taught terser bare-number replies, flipping 7 rows (2 W, 5 L).
+- DONE — month-2 GPU run (both boxes, then host-dropped; ~$20.5 total, rented
+  credit top-up $7.71): ALL FOUR planned levers attempted in parallel,
+  results in `training/reasoning/data/eval_*_r2.json` (3B box) +
+  `eval_base_math_7b.json` log capture:
+    - Re-run of the full pipeline on 2× more SFT data (742 traces vs 235) +
+      shaped GRPO rewards (format + length rewards added; `rewards.py`):
+        GSM8K(100): base 0.77 -> SFT 0.82 -> GRPO 0.79  (IDENTICAL to month-1)
+        MATH-500(100, --strict answer-tag-only): 0.39 / 0.39 / 0.38
+    - Strict-matching MATH no longer shows the old inflated numbers
+      (prose-tail false positives killed — matches the sanity check);
+      absolute level now meaningful: ~39% for base AND SFT AND GRPO.
+    - Verdict: SFT stays the only real lever (hold at +5 GSM8K), but bigger data
+      gave ZERO further gain (0.82 both times). GRPO with shaped rewards no
+      longer drifts format and holds 79 stable (vs 82->79 degenerate drift in
+      month-1) — so the fix worked but RL still adds nothing over SFT on these
+      task sizes. The pipeline is now reliable (800-step GRPO ran clean twice).
+    - 7B base (Qwen2.5-7B-Instruct): LoRA SFT does NOT fit 24GB even at
+      batch2/seq1024 (OOM in 6 attempts across configs — see box lessons).
+      Only its strict MATH-500 base eval ran: 0.0000 (base emits no `<answer>`
+      tags, so strict format-matching zeroes untrained bases — a player of
+      format-compliance more than capability). "Better base" check FAILED to
+      train; left as a documented non-result.
+  Combined implication for the track: GSM8K is saturated at +5 for this SFT
+  recipe; MATH is flat because strict judging ignores reasoning length; the
+  candidate moves that remain are (a) more GRPO episodes/epochs or a stronger
+  verifier signal, (b) smaller bases where 24GB has room (0.5B/1B), or
+  (c) accept the result and move the loop to the tool-call niche.
 - Box env lessons: runpod pytorch 2.4 image needs `pip install -U "torch>=2.5"`
   for transformers 5.17, then `pip uninstall torchvision torchaudio` (stale
   builtins crash under new torch). `run_on_gpu.sh` needs SCDIR-relative paths
@@ -330,6 +357,31 @@ a 7B in the same pattern would need the rented GPU.
   repo). datasets 5.x refuses `openai/gsm8k` without explicit config name ->
   eval_judge falls back to first config. transformers 5.17: use
   `apply_chat_template(tokenize=False)` then tokenizer() for generate().
+- Box env lessons (month-2):
+  - 4090 with driver 535.230.02/CUDA 12.4 rejects torch>=2.14 (cu130): stick
+    to torch 2.6.0+cu124 (cu124 index caps at 2.6.0). Diagnosed a deep pitfall:
+    the runpod container ships a *forward-compat shim* at
+    `/usr/local/cuda-12.4/compat/libcuda.so.1` (driver 550.90 stub) that makes
+    `cuda.is_available()` False with `Error 804` — fix was
+    `mv /etc/ld.so.conf.d/*compat* /root/ldbak/` + `ldconfig`. Always
+    `python -c "import torch;print(torch.cuda.is_available())"` after setup.
+  - trl 1.13 SFT: default `loss_type="chunked_nll"` needs trl's CE-chunking
+    patch, which crashes with Qwen on `functools.partial has no __func__` —
+    set `loss_type="nll"` AND no-op the trl patch in train_sft.py.
+  - Memory knobs that matter (24GB): gradient_checkpointing MUST stay on
+    (off = full-graph activations OOMs at step 1); `SFT_BATCH=2 SFT_SEQ=1024`
+    `PER_DEVICE_BATCH=2 GRAD_ACCUM=16 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`
+    is the stable 3B recipe (seq1536 OOMs at the trl entropy-metric step ~16).
+  - 7B: LoRA SFT OOMs on 24GB across every config tried (3B box piece of
+    evidence: even bf16 Qwen2.5-7B needs >24GB for this train script). Do not
+    attempt again on a 24GB card.
+  - Stale-tarball gotcha: the /tmp deploy tarball was built BEFORE several
+    edits, so freshly-copied boxes kept OLD files (reward funcs, eval --strict,
+    GRPO knobs). Symptoms: `AttributeError: ... no attribute length_reward`,
+    `eval_judge.py: error: unrecognized arguments: --strict`. Fix: always
+    `scp` the complete current tree per file after tarring (or rebuild the
+    tarball from the live tree). Files known to go stale: rewards.py, train_sft.py,
+    run_on_gpu.sh, eval_judge.py.
 - Ops: Vast key `~/.config/vastai/vast_api_key` + CLIs in `/tmp/pv` venv
   (vastai 1.7.0). Instances sometimes exit with "resources unavailable";
   keep them (do NOT destroy) and retry `vastai start instance <id>` — storage
