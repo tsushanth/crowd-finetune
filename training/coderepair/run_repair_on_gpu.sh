@@ -11,6 +11,9 @@ GRPO_LIMIT="${GRPO_LIMIT:-128}"
 GRPO_MAX="${GRPO_MAX_COMPLETION:-1024}"
 GRPO_GENS="${GRPO_GENS:-8}"
 GRPO_BATCH="${GRPO_BATCH:-1}"
+SFT_BATCH="${SFT_BATCH:-2}"
+SFT_GA="${SFT_GA:-16}"
+SFT_SEQ="${SFT_SEQ:-2048}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 SFT_DIR="$SCDIR/$OUT/code-repair-sft"
 SFT_MERGED="$SCDIR/$OUT/code-repair-sft-merged"
@@ -23,7 +26,7 @@ python -m pip install -q -r training/coderepair/requirements.txt
 echo "[2/8] repair SFT set present: data/code_repair_sft.jsonl ($(wc -l < training/coderepair/data/code_repair_sft.jsonl) rows)"
 
 echo "[3/8] SFT on repair traces"
-python -m training.coderepair.train_sft --base "$BASE" --data data/code_repair_sft.jsonl --output "$SFT_DIR" --device auto
+python -m training.coderepair.train_sft --base "$BASE" --data data/code_repair_sft.jsonl --output "$SFT_DIR" --device auto --batch "$SFT_BATCH" --grad-accum "$SFT_GA" --seq-length "$SFT_SEQ"
 
 echo "[4/8] merge SFT adapter"
 python -m training.reasoning.merge \
