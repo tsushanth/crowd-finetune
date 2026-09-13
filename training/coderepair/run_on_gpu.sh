@@ -41,10 +41,11 @@ python -m training.reasoning.merge \
   --output "$SFT_MERGED"
 
 if [ -z "${SKIP_GRPO:-}" ]; then
-  echo "[6/9] GRPO RL (unit-test reward, ${GRPO_LIMIT} prompts)"
+echo "[6/9] GRPO RL (unit-test reward, ${GRPO_LIMIT} prompts)"
+  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
   python -m training.coderepair.train_grpo \
     --base "$SFT_MERGED" \
-    --limit "$GRPO_LIMIT" --gens "$GRPO_GENS" --batch "$GRPO_BATCH" --max-completion "$GRPO_MAX" \
+    --limit "$GRPO_LIMIT" --gens 8 --batch 1 --max-completion "$GRPO_MAX" \
     --device auto
 
   GRPO_CKPT="$(ls -d "$GRPO_DIR"/checkpoint-* 2>/dev/null | sort -V | tail -1)"
