@@ -75,6 +75,7 @@ def main():
         truncation_mode="keep_start",
         dataset_text_field="text",
         packing=False,
+        loss_type="nll",
         logging_steps=10,
         save_steps=200,
         max_grad_norm=1.0,
