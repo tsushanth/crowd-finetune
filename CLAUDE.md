@@ -60,6 +60,52 @@ from two papers:
   the player pool passes ~100. The control gate, not reputation, remains the
   primary defence.
 
+## Tool-call niche — the competitiveness claim (commits 5ac5ed9, 40a7446)
+
+Pivoted proof-of-claim: pick a narrow, mechanically-decidable niche where a
+small open model goes head-to-head with pay-per-token frontier APIs under the
+IDENTICAL system prompt and NO LLM judge — correctness is a deterministic
+oracle, so the accuracy delta is not a rubric artifact.
+
+- `backend/toolcall.py`: NICHE="tool-call". The model routes a user request to
+  exactly one tool from a JSON-schema toolset, or declines when none fits.
+  SYSTEM_PROMPT forces a single JSON reply. `gold.chat` keeps `max_tokens=512`
+  (without it claude-haiku-4.5 402'd: OpenRouter budgets the model's full 64K
+  output ceiling). Grader is mechanical: `toolcall.is_correct` (line 186)
+  schema-checks the emitted call — tool name, required args, types, enums,
+  extra props, exact-arguments equality — no LLM in the loop.
+- Sources of truth: `data/toolcall_corpus.jsonl` (30 items), `data/bench.jsonl`
+  = 6 held-out TC items (TC-007/009/010/018/020/028); `tools/build_toolcall.py`
+  and `tools/split_bench.py --corpus <file>` build/split it. `corpus.jsonl`'s
+  38 EU items are legacy for this niche.
+- `training/eval_toolcall.py` is the comparison harness (phase 2 deliverable):
+  same SYSTEM_PROMPT to every model, mechanical grading, accuracy + $/1K-query
+  cost table, eval_runs + release-settle wiring kept.
+
+### Result (eval_run 5, 6-item TC bench, credit-loaded OpenRouter)
+
+```
+model                                             acc    $/1K q   tok/q     tps
+Qwen2.5-3B-Instruct base                       1.0000  $0.26708     487       238
+Qwen2.5-3B-Instruct tuned (crowd-lora-v2)      1.0000  $0.29400     487       216
+openai/gpt-4o-mini                             0.8333  $0.07490     471         -
+anthropic/claude-haiku-4.5                     0.8333  $0.69050     507         -
+```
+
+The claim holds on this slice: the STOCK 3B routes all 6 perfectly (1.0);
+gpt-4o-mini and claude-haiku-4.5 each whiff one (0.8333) — both decline
+TC-009 instead of calling turn_off_device. The EU-trained crowd-lora-v2
+neither helps nor hurts routing (identical 6/6; delta 0.0 -> hold, nothing
+settled), which is the honest answer to "does a strong EU LoRA transfer to a
+different niche?" — no. Caveat: n=6 (1.0 vs 0.833 = a one-item gap), so this
+proves the niche on this slice, not statistically beyond it; rerun on the full
+30-item corpus or a grown bench before over-generalizing.
+
+Negative control recorded as eval_run 4: grading tool-call output with the
+free-text EU `judge.md` under a non-toolcall system prompt is mechanically
+invalid and produced a meaningless tuned=0.4667. `is_correct` is the ONLY
+valid grader for this niche.
+
 ## DeepCogito reasoning track (`training/reasoning/`)
 
 Learning track reproducing the open "reasoning post-training" recipe (Open-R1 /
@@ -126,14 +172,17 @@ backend/
                  # export_weighted(conn, path); CLI --exclude-bench flag
 data/
   seed.tsv       # source-of-truth corpus sheet (corpus_id<niche<question<source<golden_answer<is_gold)
-  corpus.jsonl   # ACTIVE corpus: 38 EU-AI-Act compliance items, 24 is_gold
-                 # (7 verified+tainted, usable as control_right/control_wrong;
-                 # see caveats — golden_answer phrasing matters a lot here)
-  bench.jsonl    # deterministic 1-in-5 holdout (tools/split_bench.py)
+  corpus.jsonl   # LEGACY niche corpus: 38 EU-AI-Act compliance items, 24 is_gold
+                 # (kept for the legacy loop; the ACTIVE niche is tool-call below)
+  toolcall_corpus.jsonl  # ACTIVE niche corpus: 30 tool-call items (11 gold, 19
+                 # candidates; 11 expected-decline, 19 expected-call; home/CRM/pay)
+  bench.jsonl    # deterministic holdout — NOW 6 TC-* items (tools/split_bench.py)
   demo_corpus.jsonl  # fictional building-code QA example (refer only)
 tools/
   build_corpus.py  # seed.tsv → corpus.jsonl (validated, exit 1 on bad rows)
-  split_bench.py   # corpus.jsonl → bench.jsonl WITHOUT shrinking corpus
+  build_toolcall.py # builds data/toolcall_corpus.jsonl (schemas + expected calls)
+  simulate_players.py # bot-archetype player simulator (candidate truth is mechanical)
+  split_bench.py   # --corpus <file> → bench.jsonl WITHOUT shrinking corpus
                    # (bench stays playable; excluded only at export time)
 miniapp/index.html # single-file Telegram miniapp (works in browser too);
                    # sends X-Telegram-InitData when inside Telegram
@@ -146,6 +195,9 @@ training/
                    # --base Qwen/Qwen2.5-3B-Instruct --out outputs/crowd-lora`
   eval.py          # held-out bench eval, release-gate; records eval_runs and
                    # auto-settles rewards on release (see "Work-state markers")
+  eval_toolcall.py # tool-call comparison: local 3B (base/tuned) vs
+                   # gpt-4o-mini / claude-haiku-4.5, mechanical is_correct
+                   # grading, accuracy + $/1K-query table, eval_runs + settle
 deploy/
   Caddyfile        # auto-HTTPS, serves miniapp/, /api/* → 127.0.0.1:8000
   crowdcheck.service  # systemd unit (venv uvicorn, EnvironmentFile=<REPO>/.env)
@@ -202,17 +254,23 @@ EOF
 
 ## Next moves (in rough priority)
 
-1. Confirm the demo play loop from the miniapp with a REAL browser (I
+1. Tool-call niche, make it real: train a tool-call-tuned LoRA (export
+   toolcall candidates -> `training.train_lora`), rerun
+   `training/eval_toolcall.py --adapter outputs/toolcall-lora` on the full
+   30-item toolcall_corpus or a grown bench — gives a genuine niche-trained
+   tuned−base delta instead of the EU-adapter no-transfer 0.0, and a wider-n
+   accuracy table vs gpt-4o-mini/haiku.
+2. Confirm the demo play loop from the miniapp with a REAL browser (I
    simulated the exact HTTP calls and static-served index.html; a headless or
    desktop browser click-through is the remaining gap), ideally against the
    deployed Caddy TLS endpoint.
-2. Real 7B release pass: export the same accepted samples and run
+3. Real 7B release pass: export the same accepted samples and run
    LLaMA-Factory/trl training + `training/eval.py --base Qwen/Qwen2.5-7B-Instruct`
    on the rented GPU (this ties into the reasoning track's box). The local 3B
    run proves the mechanics; the 7B run is the production pairing (game base).
-3. Grow data volume: real play sessions, then re-check bench; the 17-row
+4. Grow data volume: real play sessions, then re-check bench; the 17-row
    train set is demonstrative, not yet consequential for the domain model.
-4. Optional hardening exercises: concurrency test on the shared sqlite conn;
+5. Optional hardening exercises: concurrency test on the shared sqlite conn;
    a `data/crowd_sft_valid.jsonl` validation step before training; an
    integration test that drives game.py with a stubbed LLM endpoint so CI can
    run the full loop without a key; a headless-browser e2e for the miniapp.
@@ -268,6 +326,13 @@ clean session and acceptance begins; a sloppy all-flag player adds 2 false
     - eval result: base=0.05 tuned=0.3375 delta=+0.2875 -> RELEASE. eval_run 1
       recorded; auto-settle paid 2 players (hunter 0.929rel/20samples→$0.929,
       sloppy 0.571rel/5samples→$0.143).
+- Tool-call competitor comparison: DONE (this Mac, MPS, credit-loaded
+  OpenRouter). eval_runs 2-5 in data/crowd.db: #2 = EU uniform-prompt release
+  re-measure base=0.0625/tuned=0.375 (delta +0.3125, historical artifact, old
+  prompt mismatch), #3 = base=0.3625/tuned=0.375 (delta +0.0125, hold), #4 =
+  INVALID judge-graded TC run (0.95/0.4667, wrong grader), #5 = mechanical TC
+  run 1.0/1.0/0.0 (hold), local 3B beats both API competitors on accuracy on
+  the 6-item bench. See "Tool-call niche" section for the table + caveats.
 - Not started: miniapp click-TEST driving a real browser (I simulated the
   exact HTTP calls; no headless browser on hand), Telegram deploy to a real
   host, training the real 7B (game base) on a GPU box — the local release
@@ -284,6 +349,10 @@ PYTORCH_ENABLE_MPS_FALLBACK=1 PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0 \
   .venv/bin/python -m training.train_lora --data data/crowd_sft.jsonl --base Qwen/Qwen2.5-3B-Instruct --out outputs/crowd-lora
 PYTORCH_ENABLE_MPS_FALLBACK=1 PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0 \
   .venv/bin/python -m training.eval --base Qwen/Qwen2.5-3B-Instruct --adapter outputs/crowd-lora --max-new 128
+# tool-call niche comparison (mechanical is_correct oracle; API models need a
+# funded OpenRouter key; --adapter optional — omit to get tuned=base):
+PYTORCH_ENABLE_MPS_FALLBACK=1 PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0 \
+  .venv/bin/python -m training.eval_toolcall --base Qwen/Qwen2.5-3B-Instruct --adapter outputs/crowd-lora-v2 --competitor
 ```
 
 Feature caveats confirmed live: 16GB MPS trains/evaluates Qwen2.5-3B LoRA fine

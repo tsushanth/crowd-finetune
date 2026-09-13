@@ -12,6 +12,7 @@ _HEADERS = {
     "Content-Type": "application/json",
 }
 _ENDPOINT = config.BASE_LLM_URL.rstrip("/") + "/chat/completions"
+_MAX_TOKENS = 512
 _BASE_SYSTEM = "Answer the question directly and concisely, only from the provided domain source."
 
 
@@ -25,6 +26,7 @@ def chat(system: str, user: str, model: Optional[str] = None, json_mode: bool = 
             {"role": "user", "content": user},
         ],
         "temperature": 0,
+        "max_tokens": _MAX_TOKENS,
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
