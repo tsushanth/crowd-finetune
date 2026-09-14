@@ -1,0 +1,13 @@
+{
+  "dataset": "/workspace/coderepair/training/coderepair/data/code_repair_eval.jsonl",
+  "pass_k": 1,
+  "rows": 27,
+  "rows_table": [
+    {
+      "model": "code-repair-dpo-merged base",
+      "pass": 0.48148148148148145,
+      "cost_per_1k_gen": 2.151479266366419,
+      "tokens_per_gen": 1217.037037037037
+    }
+  ]
+}

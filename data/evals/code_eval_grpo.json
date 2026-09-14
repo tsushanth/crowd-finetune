@@ -1,0 +1,13 @@
+{
+  "dataset": "/workspace/coderepair/data/code_eval.jsonl",
+  "pass_k": 1,
+  "rows": 50,
+  "rows_table": [
+    {
+      "model": "code-repair-grpo-merged base",
+      "pass": 0.4,
+      "cost_per_1k_gen": 1.5992918487021492,
+      "tokens_per_gen": 751.46
+    }
+  ]
+}

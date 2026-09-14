@@ -1,0 +1,13 @@
+{
+  "dataset": "/workspace/coderepair/data/code_mbpp_eval.jsonl",
+  "pass_k": 1,
+  "rows": 50,
+  "rows_table": [
+    {
+      "model": "Qwen2.5-3B-Instruct base",
+      "pass": 0.06,
+      "cost_per_1k_gen": 0.317914976592693,
+      "tokens_per_gen": 216.88
+    }
+  ]
+}

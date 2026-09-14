@@ -1,0 +1,13 @@
+{
+  "dataset": "/workspace/coderepair/data/code_mbpp_eval.jsonl",
+  "pass_k": 1,
+  "rows": 50,
+  "rows_table": [
+    {
+      "model": "code-repair-sft-merged base",
+      "pass": 0.02,
+      "cost_per_1k_gen": 1.718309750928647,
+      "tokens_per_gen": 657.2
+    }
+  ]
+}
