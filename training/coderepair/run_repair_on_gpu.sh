@@ -27,22 +27,24 @@ DPO_MERGED="$SCDIR/$OUT/code-repair-dpo-merged"
 ROLLOUT_LIMIT="${ROLLOUT_LIMIT:-128}"
 ROLLOUT_GENS="${ROLLOUT_GENS:-8}"
 
-echo "[1/10] deps"
+echo "[2/10] deps"
 python -m pip install -q -r training/coderepair/requirements.txt
 
-echo "[2/10] repair SFT set present: data/code_repair_sft.jsonl ($(wc -l < training/coderepair/data/code_repair_sft.jsonl) rows)"
+if [ -z "${SKIP_SFT:-}" ]; then
+echo "[3/10] repair SFT set present: data/code_repair_sft.jsonl ($(wc -l < training/coderepair/data/code_repair_sft.jsonl) rows)"
 
-echo "[3/10] SFT on repair traces"
+echo "[4/10] SFT on repair traces"
 python -m training.coderepair.train_sft \
   --base "$BASE" --data data/code_repair_sft.jsonl --output "$SFT_DIR" \
   --device auto --batch "$SFT_BATCH" --grad-accum "$SFT_GA" --seq-length "$SFT_SEQ" \
   --seed "$SEED" $WANDB_ARGS
 
-echo "[4/10] merge SFT adapter"
+echo "[5/10] merge SFT adapter"
 python -m training.reasoning.merge \
   --base "$BASE" \
   --adapter "$SFT_DIR" \
   --output "$SFT_MERGED"
+fi
 
 if [ -z "${SKIP_GRPO:-}" ]; then
 echo "[5/10] GRPO RL on repair prompts (unit-test reward, ${GRPO_LIMIT} prompts)"
