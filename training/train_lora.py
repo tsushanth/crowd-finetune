@@ -34,7 +34,7 @@ def main() -> None:
 
     import torch
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from bitsandbytes.optim import Adam8bit
 
     if torch.cuda.is_available():
@@ -50,7 +50,7 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(args.base)
     load_kwargs = {"torch_dtype": dtype, "low_cpu_mem_usage": True}
     if device.type == "cuda":
-        load_kwargs["load_in_8bit"] = True
+        load_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
     model = AutoModelForCausalLM.from_pretrained(args.base, **load_kwargs)
     if device.type == "cuda":
         model = prepare_model_for_kbit_training(model)
