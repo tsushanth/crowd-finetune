@@ -1,5 +1,7 @@
 import json
 
+import httpx
+
 from . import config, gold
 
 NICHE = "tool-call"
@@ -227,9 +229,36 @@ def is_correct(emitted: str, item: dict) -> dict:
     return result
 
 
+def _chat_local(system: str, user: str) -> str:
+    """Use local vLLM endpoint if configured for toolcall; otherwise gold.chat()."""
+    if not config.TOOLCALL_LLM_URL:
+        return gold.chat(system, user)
+    payload = {
+        "model": config.TOOLCALL_LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "temperature": 0,
+        "max_tokens": 512,
+    }
+    headers = {
+        "Authorization": f"Bearer {config.TOOLCALL_LLM_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    resp = httpx.post(
+        config.TOOLCALL_LLM_URL.rstrip("/") + "/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+
 def base_answer(item: dict) -> str:
     question = item.get("question") or render_question(_payload(item))
-    return gold.chat(SYSTEM_PROMPT, question).strip()
+    return _chat_local(SYSTEM_PROMPT, question).strip()
 
 
 def taint_answer(item: dict) -> str:

@@ -20,6 +20,11 @@ JUDGE_MIN_SCORE = float(os.getenv("JUDGE_MIN_SCORE", "0.9"))
 FILTER_THETA = float(os.getenv("FILTER_THETA", "0.8"))
 MIN_EVAL_DELTA = float(os.getenv("MIN_EVAL_DELTA", "0.03"))
 TEACHER_MODEL = os.getenv("TEACHER_MODEL", "deepseek/deepseek-r1-0528")
+
+# Optional local vLLM endpoint for toolcall niche (overrides BASE_LLM_* for toolcall only)
+TOOLCALL_LLM_URL = os.getenv("TOOLCALL_LLM_URL", "")
+TOOLCALL_LLM_API_KEY = os.getenv("TOOLCALL_LLM_API_KEY", "dummy")
+TOOLCALL_LLM_MODEL = os.getenv("TOOLCALL_LLM_MODEL", "toolcall-7b-lora")
 CORPUS_PATH = Path(
     os.getenv("CORPUS_PATH", str(BASE_DIR / "data" / "corpus.jsonl"))
 )
