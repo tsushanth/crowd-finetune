@@ -33,8 +33,9 @@ def main() -> None:
         return
 
     import torch
-    from peft import LoraConfig, get_peft_model
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
     from transformers import AutoModelForCausalLM, AutoTokenizer
+    from bitsandbytes.optim import Adam8bit
 
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -47,10 +48,16 @@ def main() -> None:
         dtype = torch.float32
 
     tokenizer = AutoTokenizer.from_pretrained(args.base)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.base, torch_dtype=dtype, low_cpu_mem_usage=True
-    ).to(device)
+    load_kwargs = {"torch_dtype": dtype, "low_cpu_mem_usage": True}
+    if device.type == "cuda":
+        load_kwargs["load_in_8bit"] = True
+    model = AutoModelForCausalLM.from_pretrained(args.base, **load_kwargs)
+    if device.type == "cuda":
+        model = prepare_model_for_kbit_training(model)
+    else:
+        model = model.to(device)
     model.config.use_cache = False
+    model.gradient_checkpointing_enable()
     if not tokenizer.pad_token:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -79,7 +86,7 @@ def main() -> None:
     train_size = int(0.9 * len(enc["input_ids"]))
     print(f"rows={len(texts)} train_chars={sum(len(t) for t in texts)} device={device}")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = Adam8bit(model.parameters(), lr=args.lr)
     model.train()
     steps = opt_steps = 0
     for epoch in range(int(args.epochs)):
