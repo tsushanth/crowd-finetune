@@ -495,3 +495,105 @@ the 50 hidden-test eval rows. REAL NUMBERS:
   separated paths are accepted.
 - Semi-open items: tuned model still needs to clear base 0.52; DPO step
   untested end-to-end on 3B; box restart + phase-2 rerun with new data.
+
+## PHASE-2 FULL GPU RUN — RESULTS (instance 50824587, this session)
+
+Pipeline ran END-TO-END on the 4090: SFT (code_repair_sft.jsonl) -> merge ->
+GRPO (limit 142, 1136 steps) -> merge(ckpt-1136) -> collect_rollouts (142x8,
+REPAIR_SYSTEM sandbox scoring) -> make_dpo (121 pairs) -> DPO (1 epoch, 16
+steps) -> merge -> held-out eval matrix (repair 27 / generate 50 / MBPP 50) +
+competitors. Real numbers (pass@1; tok/gen in parens):
+
+```
+dataset   base      sft       grpo      dpo
+repair    0.778     0.370     0.370     0.481   (tok/gen 650/1236/1139/1217)
+generate  0.560     0.340     0.400     0.300   (tok/gen 312/806/751/766)
+mbpp      0.060     0.020     0.000     0.000   (tok/gen 217/657/601/785)
+competitor repair: gpt-4o-mini 0.852, claude-3-haiku 0.630 (vs tuned 0.37-0.48)
+```
+
+VERDICT: the current code-repair SFT data (106-row auto-distilled traces) HURTS.
+Every tuned stage regresses the base on ALL three sets while emitting 2-4x more
+tokens (=2-7x cost). DPO recovers some of the damage on repair (0.481) but not
+to base, let alone the APIs. The GRPO step overfit the 142-prompt repair unit
+tests (reward-mean 0.79->0.83) but that does NOT transfer. The loop's own gate
+correctly REJECTS this data: phase-2 needs BETTER (crowd-gated / correctness-
+filtered, volume >> 142) repair traces before tuning is worth it. This mirrors
+the toolcall track where crowd-gated data did move the needle.
+
+Ops lessons from this run:
+- Launch ONE phase-2 script per box. Two concurrent `run_repair_on_gpu.sh`
+  (this session: mine `run_phase2.log` (GRPO_LIMIT=128 default) + the user's
+  `repair_run.log` (GRPO_LIMIT=142 ROLLOUT_LIMIT=142) raced on the SAME
+  output dirs; the user's survived, mine silently died. Result: read/watch
+  `/workspace/coderepair/repair_run.log`, NOT run_phase2.log.
+- DPO OOMs on the 4090 at `--batch 2 --seq-length 2048` (chosen+rejected+
+  frozen-ref = 3 model passes, first-step alloc blew past 2.99GB free; "0/16"
+  bar then crash). Works at `--batch 1 --grad-accum 8` (same eff. batch, ~11s/
+  step, 16 steps ~3 min on 121 pairs).
+- Path resolution gotchas hit live: train_dpo.py prepends its package dir to
+  RELATIVE `--output` (-> nested `training/coderepair/training/coderepair/
+  outputs/...`); always pass ABSOLUTE paths for `--output/--out/--adapter/--
+  model` on the box and find adapters by `find -name '*dpo*' -exec test -f
+  '{}/adapter_model.safetensors'`. eval_code `--data` is package-relative by
+  default BUT absolute paths work if the file exists at the exact path (it
+  root-resolves then falls back to as-given; generate/MBPP data lives at repo-
+  root `data/code_{eval,mbpp_eval}.jsonl`, NOT under training/coderepair/data).
+- `set -euo pipefail` + `ls -d dir/checkpoint-*` on empty glob exits non-zero
+  and silently kills a continuation script inside `$(...)`; guard with
+  `|| true`.
+- All evals + competitor table are in `/workspace/coderepair/data/evals/`
+  (gitigored); code-repair-dpo adapter (239MB) is at
+  `training/coderepair/training/coderepair/outputs/code-repair-dpo`.
+- Box still RUNNING (paid) for the vLLM throughput bench + toolcall cycle;
+  artifacts worth pulling to repo `data/` before stopping if re-run planned.
+
+## PHASE-2 FULL GPU RUN — DIAGNOSIS (this session)
+
+The 106-row auto-distilled `code_repair_sft.jsonl` HURTS: base 0.778 → SFT 0.370
+(repair eval), base 0.560 → SFT 0.340 (generate), base 0.060 → SFT 0.020 (MBPP).
+Every tuning stage (SFT, GRPO, DPO) is worse than base. Diagnosis from trace
+audit:
+
+1. **Teacher over-reasoning**: deepseek-v3.2 emits 2000-3000 character reasoning
+   essays per trace (median ~2400 chars) — the model learns to emit verbose
+   prose before the code block, inflating tokens 2-4× and pushing completions
+   past practical limits.
+
+2. **Over-rewrite pathology**: the teacher rarely produces a minimal patch.
+   Instead it rewrites the entire function body, often restructuring loops,
+   renaming variables, or adding helper functions that were not in the original.
+   The model learns "when you see a buggy function, rewrite everything" — which
+   destroys working code on the generate/MBPP evals where the input is NOT buggy.
+
+3. **Bug-type/reasoning mismatch**: the `bug_type` field says e.g. "wrong_var"
+   but the teacher reasoning often discusses operators, conditions, or general
+   algorithmic flaws. The model is not learning a consistent mapping from
+   mutation type to fix pattern.
+
+4. **No crowd gate**: the toolcall track succeeded because accepted samples
+   were mechanically verified correct before entering SFT. The code-repair
+   "teacher" is just an API call — no correctness filter at data-creation time
+   beyond the sandbox pass. Sandbox-pass is necessary but NOT sufficient: the
+   answer can be correct while the reasoning is wrong or the rewrite is
+   excessive, and those bad habits get baked into the model.
+
+5. **GPT-4o-mini ceiling is unreachable**: on repair eval, gpt-4o-mini scores
+   0.852 — the tuned model peaks at 0.481 (DPO). Even perfect training data
+   would struggle to close a 37-point gap on 27 eval items. The niche is
+   competitive against frontier APIs in a way toolcall is not.
+
+## Sunset recommendation (code-repair)
+
+The code-repair pipeline (sandbox → AST mutators → teacher distill →
+SFT/GRPO/DPO → eval) is mechanically sound. The data source is the blocker.
+Fixing it would require:
+- A minimal-patch teacher (not deepseek-v3.2's essayist)
+- Crowd-gated acceptance of traces (only verified + concise reasoning)
+- An order of magnitude more data (>> 142 variants, >> 106 traces)
+- A separate "don't over-rewrite" regularization signal
+
+None of these are on the current roadmap. **Recommended: archive the code-repair
+files (keep the branch `niche/code-repair` for reference) and redirect effort to
+toolcall**, which has already demonstrated a working flywheel (555-item corpus,
+499 traces, tuned-3B beating GPT-4o-mini on full-domain eval).
