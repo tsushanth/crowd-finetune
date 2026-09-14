@@ -4,26 +4,21 @@ import random
 from pathlib import Path
 
 import torch
-from datasets import Dataset
-from peft import LoraConfig
-from transformers import AutoTokenizer
-from trl import SFTConfig, SFTTrainer
-
-from . import formats
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="Qwen/Qwen2.5-3B-Instruct")
-    parser.add_argument("--data", default="data/reasoning_sft.jsonl")
-    parser.add_argument("--output", default="outputs/reasoning-sft")
-    parser.add_argument("--epochs", type=float, default=2.0)
-    parser.add_argument("--batch", type=int, default=4)
-    parser.add_argument("--grad-accum", type=int, default=8)
-    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--data", default="data/dpo_pairs.jsonl")
+    parser.add_argument("--output", default="outputs/reasoning-dpo")
+    parser.add_argument("--epochs", type=float, default=1.0)
+    parser.add_argument("--batch", type=int, default=2)
+    parser.add_argument("--grad-accum", type=int, default=4)
+    parser.add_argument("--lr", type=float, default=5e-6)
+    parser.add_argument("--beta", type=float, default=0.1)
     parser.add_argument("--seq-length", type=int, default=2048)
-    parser.add_argument("--lora-rank", type=int, default=64)
-    parser.add_argument("--lora-alpha", type=int, default=128)
+    parser.add_argument("--lora-rank", type=int, default=32)
+    parser.add_argument("--lora-alpha", type=int, default=64)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=["cpu", "mps", "cuda", "auto"], default=None)
     parser.add_argument("--wandb", action="store_true")
@@ -38,6 +33,11 @@ def main():
     except ImportError:
         pass
 
+    from datasets import Dataset
+    from peft import LoraConfig
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from trl import DPOConfig, DPOTrainer
+
     root = Path(__file__).resolve().parent
     data_path = root / args.data
     output_dir = root / args.output
@@ -48,35 +48,12 @@ def main():
         if line.strip()
     ]
     if not rows:
-        raise SystemExit("no training rows; run distill.py first")
-    print(f"{len(rows)} training rows from {data_path}")
+        raise SystemExit("no dpo pairs; run collect_rollouts.py then make_dpo.py")
+    print(f"{len(rows)} DPO pairs from {data_path}")
 
     tokenizer = AutoTokenizer.from_pretrained(args.base)
-
-    def build_text(example):
-        messages = [
-            {"role": "user", "content": example["question"]},
-            {
-                "role": "assistant",
-                "content": formats.build_completion(
-                    example["reasoning"], example["answer"]
-                ),
-            },
-        ]
-        return {
-            "text": tokenizer.apply_chat_template(messages, tokenize=False)
-        }
-
-    ds = Dataset.from_list(rows).map(build_text)
     tokenizer.pad_token = tokenizer.eos_token
-
-    model = args.base
-    if args.device:
-        from transformers import AutoModelForCausalLM
-
-        model = AutoModelForCausalLM.from_pretrained(
-            args.base, torch_dtype=torch.bfloat16, device_map=args.device
-        )
+    tokenizer.padding_side = "left"
 
     report_to = "none"
     if args.wandb:
@@ -84,26 +61,25 @@ def main():
 
         wandb.init(
             project="crowdcheck-reasoning",
-            name=f"sft-{Path(args.base).name}-seed{args.seed}",
+            name=f"dpo-{Path(args.base).name}-seed{args.seed}",
             config=vars(args),
         )
         report_to = "wandb"
 
-    sft_config = SFTConfig(
+    ds = Dataset.from_list(rows)
+
+    dpo_config = DPOConfig(
         output_dir=str(output_dir),
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch,
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
+        beta=args.beta,
         bf16=torch.cuda.is_available(),
         max_length=args.seq_length,
-        truncation_mode="keep_start",
-        dataset_text_field="text",
-        packing=False,
-        logging_steps=10,
-        save_steps=200,
-        max_grad_norm=1.0,
+        logging_steps=1,
+        save_strategy="epoch",
         seed=args.seed,
         data_seed=args.seed,
         report_to=report_to,
@@ -116,9 +92,15 @@ def main():
         target_modules="all-linear",
     )
 
-    trainer = SFTTrainer(
+    model = args.base
+    if args.device:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.base, torch_dtype=torch.bfloat16, device_map=args.device
+        )
+
+    trainer = DPOTrainer(
         model=model,
-        args=sft_config,
+        args=dpo_config,
         train_dataset=ds,
         processing_class=tokenizer,
         peft_config=peft_config,

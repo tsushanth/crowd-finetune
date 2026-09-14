@@ -1,4 +1,5 @@
 import argparse
+import random
 from pathlib import Path
 
 import torch
@@ -26,7 +27,19 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-6)
     parser.add_argument("--lora-rank", type=int, default=32)
     parser.add_argument("--lora-alpha", type=int, default=64)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--device", choices=["cpu", "mps", "cuda", "auto"], default=None)
+    parser.add_argument("--wandb", action="store_true")
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    try:
+        import numpy as np
+
+        np.random.seed(args.seed)
+    except ImportError:
+        pass
 
     root = Path(__file__).resolve().parent
     output_dir = root / args.output
@@ -54,6 +67,17 @@ def main():
     ds = ds.filter(lambda ex: bool(ex["answer"]))
     print(f"{len(ds)} RL rows")
 
+    report_to = "none"
+    if args.wandb:
+        import wandb
+
+        wandb.init(
+            project="crowdcheck-reasoning",
+            name=f"grpo-{Path(args.base).name}-seed{args.seed}",
+            config=vars(args),
+        )
+        report_to = "wandb"
+
     grpo_config = GRPOConfig(
         output_dir=str(output_dir),
         num_train_epochs=args.epochs,
@@ -68,7 +92,9 @@ def main():
         bf16=torch.cuda.is_available(),
         logging_steps=1,
         save_strategy="epoch",
-        report_to="none",
+        seed=args.seed,
+        data_seed=args.seed,
+        report_to=report_to,
     )
     peft_config = LoraConfig(
         task_type="CAUSAL_LM",
@@ -78,8 +104,16 @@ def main():
         target_modules="all-linear",
     )
 
+    model = base_model
+    if args.device:
+        from transformers import AutoModelForCausalLM
+
+        model = AutoModelForCausalLM.from_pretrained(
+            args.base, torch_dtype=torch.bfloat16, device_map=args.device
+        )
+
     trainer = GRPOTrainer(
-        model=base_model,
+        model=model,
         reward_funcs=[rewards.exact_match_reward, rewards.format_reward, rewards.length_reward],
         args=grpo_config,
         train_dataset=ds,

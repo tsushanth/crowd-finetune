@@ -16,13 +16,17 @@ def _load_bench_ids() -> set[str]:
 
 
 def export_sft_jsonl(
-    conn, path: str | Path, limit: int = 0, exclude_bench: bool = False
+    conn, path: str | Path, limit: int = 0, exclude_bench: bool = False, niche: str | None = None
 ) -> int:
     limit_clause = f"LIMIT {int(limit)}" if limit else ""
+    niche_clause = " AND i.niche = ?" if niche else ""
+    params = (niche,) if niche else ()
     rows = conn.execute(
         f"SELECT a.question, a.corrected_answer, i.corpus_id "
         f"FROM accepted_samples a JOIN items i ON i.id = a.item_id "
-        f"ORDER BY a.id {limit_clause}"
+        f"WHERE 1 = 1{niche_clause} "
+        f"ORDER BY a.id {limit_clause}",
+        params,
     ).fetchall()
     bench_ids = _load_bench_ids() if exclude_bench else set()
     if bench_ids:
@@ -81,9 +85,15 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--exclude-bench", action="store_true")
+    ap.add_argument("--niche", default=None)
+    ap.add_argument("--out", default="data/crowd_sft.jsonl")
     args = ap.parse_args()
     conn = db.connect()
     count = export_sft_jsonl(
-        conn, "data/crowd_sft.jsonl", limit=args.limit, exclude_bench=args.exclude_bench
+        conn,
+        args.out,
+        limit=args.limit,
+        exclude_bench=args.exclude_bench,
+        niche=args.niche,
     )
-    print(f"exported {count} samples to data/crowd_sft.jsonl")
+    print(f"exported {count} samples to {args.out}")

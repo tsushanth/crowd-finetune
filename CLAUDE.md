@@ -122,11 +122,18 @@ training/reasoning/
   distill.py     # teacher traces for GSM8K/MATH -> data/reasoning_*.jsonl
                  #   (verifies each trace against the gold final answer)
   prep_data.py   # merge + dedupe teacher batches -> data/reasoning_sft.jsonl
-  train_sft.py   # LoRA SFT on distilled traces
-  train_grpo.py  # GRPO RL with verifiable reward (LoRA)
+  train_sft.py   # LoRA SFT on distilled traces (--seed, --device, --wandb)
+  train_grpo.py  # GRPO RL with verifiable reward (LoRA; --seed/--device/--wandb)
+  train_dpo.py   # LoRA DPO on rollout-derived preference pairs (--seed/--device/--wandb)
+  collect_rollouts.py  # sample N completions/prompt with a tuned model, score with
+                 #   the SAME rewards as GRPO, save group-normalized advantages
+  make_dpo.py    # rollouts -> DPO pairs (chosen=highest-advantage correct, rejected=worst)
+  sweep_dpo.sh   # 3-seed DPO sweep + pairwise win matrix vs base/SFT
   merge.py       # merge LoRA adapter -> dense checkpoint for the next stage
-  eval_judge.py  # held-out accuracy (local HF model or OpenAI-compatible endpoint)
-  run_on_gpu.sh  # one-shot: SFT -> merge -> GRPO -> merge -> eval table
+  eval_judge.py  # held-out accuracy + metrics (avg len chars/tokens, local ppl,
+                 #   rm scores from rewards.py, per-mode accuracy)
+  run_on_gpu.sh  # one-shot: SFT -> merge -> GRPO -> merge -> rollouts -> DPO -> merge ->
+                 #   eval table (SEED/WANDB/ROLLOUT_*/SKIP_DPO envs)
   serve.sh       # vLLM entry point for evals / chat
   requirements.txt
 ```
@@ -138,9 +145,24 @@ Runbook (from repo root; the scripts are `python -m` modules):
 python -m training.reasoning.distill --limit 200          # teacher traces (needs BASE_LLM_API_KEY)
 python -m training.reasoning.prep_data --inputs data/reasoning_sft.jsonl data/reasoning_sft_more.jsonl --max-rows 400
 # rented CUDA box (RunPod/Vast); repo synced to the box first
-bash training/reasoning/run_on_gpu.sh                    # SFT -> merge -> GRPO -> merge -> eval table
+bash training/reasoning/run_on_gpu.sh                    # SFT -> merge -> GRPO -> merge -> DPO -> eval table
+# 3-seed DPO reproducibility sweep (needs outputs/reasoning-sft-merged + dpo_pairs on the box)
+SEEDS="1 2 3" bash training/reasoning/sweep_dpo.sh
 # serve the final checkpoint for evals / chat
 training/reasoning/serve.sh
+```
+
+The RLAIF flywheel inside the reasoning track: the GRPO step's merged
+checkpoint is the source for the DPO step. `collect_rollouts.py` re-samples
+`--gens` completions per prompt from the *merged GRPO* model and scores them
+with the exact same reward funcs GRPO optimizes (`rewards.py`), then
+`make_dpo.py` turns each prompt into a chosen (highest-advantage, correct) /
+rejected (worst, wrong) pair. `train_dpo.py` then does LoRA DPO on top of the
+merged SFT checkpoint. This is preference pairs derived from your own
+RLAIF-annotated rollouts — no extra judge calls needed. On the Mac, add
+`--device cpu` to any trl trainer (the known MPS segfault in the trl
+weight-load path); default (no `--device`) keeps the CUDA-box string-model
+path unchanged.
 ```
 
 The month-1 deliverable is a before/after accuracy table (base vs SFT vs GRPO)
@@ -403,6 +425,22 @@ a 7B in the same pattern would need the rented GPU.
   (vastai 1.7.0). Instances sometimes exit with "resources unavailable";
   keep them (do NOT destroy) and retry `vastai start instance <id>` — storage
   only bills while stopped and the disk (with all checkpoints) persists.
+- Review-action pass: DPO-on-own-RLAIF-rollouts pipeline added
+  (`collect_rollouts.py`/`make_dpo.py`/`train_dpo.py`), eval_judge now emits
+  automated metrics (avg len chars/tokens, local `--ppl`, rm_{exact,format,
+  length} averages from rewards.py, per-mode accuracy), all three trainers
+  take `--seed`/`--device`/`--wandb`, `run_on_gpu.sh` gained the
+  rollouts->DPO->merge steps (env: SEED/WANDB/ROLLOUT_LIMIT/ROLLOUT_GENS/
+  SKIP_DPO), `sweep_dpo.sh` runs the 3-seed DPO sweep with a pairwise win
+  matrix. SMOKE-VERIFIED on this Mac (Qwen2.5-0.5B, `--device cpu`): rollouts
+  (3 prompts x 3 gens incl. exact-match scoring), make_dpo (1 pair),
+  train_dpo (1 step, loss 0.7305, adapter+checkpoint saved), eval_judge --
+  ppl (1.2526) + rm scores on a 3-row slice. The Mac MPS segfault in the trl
+  trainer weight-load path (see box env lessons) is avoided with `--device
+  cpu`; the GPU box keeps the no-flag string-model path byte-identical. GRPO
+  still needs saving its in-training rollouts — collect_rollouts re-samples
+  post-hoc from the merged checkpoint instead, so it's not observing the
+  training-time distribution; acceptable as the RLAIF source for now.
 
 ## Caveats & decisions to respect
 

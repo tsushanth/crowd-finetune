@@ -6,3 +6,4 @@ datasets==5.0.1
 accelerate
 huggingface_hub
 httpx
+wandb
