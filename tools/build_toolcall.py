@@ -65,6 +65,7 @@ def main() -> None:
         raise SystemExit(f"corpus not found: {CORPUS_PATH}")
     rows = [json.loads(l) for l in CORPUS_PATH.read_text().splitlines() if l.strip()]
     seen: set[str] = set()
+    seen_q: set[str] = set()
     errors: list[str] = []
     for row in rows:
         cid = row.get("corpus_id")
@@ -73,6 +74,11 @@ def main() -> None:
         if cid in seen:
             errors.append(f"duplicate corpus_id {cid}")
         seen.add(cid)
+        question = row.get("question")
+        if question:
+            if question in seen_q:
+                errors.append(f"{cid}: duplicate question (same as an earlier row)")
+            seen_q.add(question)
         payload = json.loads(row["payload"]) if isinstance(row["payload"], str) else row["payload"]
         for t in payload.get("tools") or []:
             _validate_schema(t["name"], t.get("parameters") or {}, errors)
