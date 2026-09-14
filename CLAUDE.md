@@ -405,10 +405,27 @@ EOF
 5. Optional hardening exercises: concurrency test on the shared sqlite conn;
    a `data/crowd_sft_valid.jsonl` validation step before training; an
    integration test that drives game.py with a stubbed LLM endpoint so CI can
-   run the full loop without a key; a headless-browser e2e for the miniapp.
+   run the full loop without a key — DONE (`tools/integration_test.py` +
+   `.github/workflows/ci.yml`, fastapi TestClient + a stdlib HTTP stub of
+   `BASE_LLM_URL/v1/chat/completions`; full loop: warm → session start/answer/
+   end → gate accepts 3 candidates at posterior 0.8 → export → leaderboard →
+   stage2 group → settle pays $0.12; deterministic, keyless, runs in CI);
+   a headless-browser e2e for the miniapp.
 
 ## Work-state markers
 
+- Integration test with stubbed LLM: DONE (`tools/integration_test.py`). Keyless
+  end-to-end drive of game.py via FastAPI TestClient: spins a stdlib HTTP stub
+  for `{BASE_LLM_URL}/v1/chat/completions` (Authorization checked; json-mode
+  returns pass/1.0, "subtly-wrong" returns a tainted answer, else a correct
+  stub), sets DB_PATH/CORPUS_PATH/REQUIRE_TG_AUTH=false before import, warms 10
+  fixture items (5 gold → 5 playable controls), plays one perfect 10-item
+  session (DB-guided served_type like the demo harnesses), then asserts: 60
+  points, gate accepts 3/3 candidates at posterior 0.8, export writes 3 rows,
+  leaderboard, interleaved grouping, settle credits 3 samples/1 player with
+  reward_balance $0.12. Deterministic (reruns identical). CI: `.github/workflows/
+  ci.yml` runs `python -m py_compile backend/*.py tools/*.py` + the integration
+  test on push/PR with only `fastapi httpx` installed.
 - Stage 1 (game + gate + export + bench/release): DONE, smoke-tested.
 - Stage 2 (reputation/grouping + eval-proven payouts): DONE, smoke-tested.
 - Deploy (Telegram initData auth + Caddy/systemd configs): DONE, files written,
