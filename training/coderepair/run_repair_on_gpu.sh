@@ -49,7 +49,7 @@ echo "[5/10] GRPO RL on repair prompts (unit-test reward, ${GRPO_LIMIT} prompts)
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
   python -m training.coderepair.train_grpo \
     --base "$SFT_MERGED" \
-    --data data/code_repair_sft.jsonl \
+    --data data/code_repair_train.jsonl \
     --limit "$GRPO_LIMIT" --gens "$GRPO_GENS" --batch "$GRPO_BATCH" --max-completion "$GRPO_MAX" \
     --output "$GRPO_DIR" \
     --device auto
@@ -75,7 +75,7 @@ if [ -z "${SKIP_DPO:-}" ]; then
   echo "[7/10] collect rollouts (${ROLLOUT_LIMIT} prompts x ${ROLLOUT_GENS}) from ${ROLLOUT_MODEL}"
   python -m training.coderepair.collect_rollouts \
     --base "$ROLLOUT_MODEL" \
-    --data data/code_repair_eval.jsonl \
+    --data data/code_repair_train.jsonl \
     --limit "$ROLLOUT_LIMIT" --gens "$ROLLOUT_GENS" \
     --seed "$SEED" --output "data/repair_rollouts.jsonl"
 
