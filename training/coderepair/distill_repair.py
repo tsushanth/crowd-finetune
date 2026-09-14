@@ -34,7 +34,7 @@ def main():
     else:
         rows = rows[args.skip:]
 
-    out = root / args.out
+    out = Path(args.out) if Path(args.out).is_absolute() else root / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
 
     def work(row):

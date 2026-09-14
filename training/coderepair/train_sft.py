@@ -1,5 +1,6 @@
 import argparse
 import json
+import random
 from pathlib import Path
 
 import torch
@@ -23,13 +24,23 @@ def main():
     parser.add_argument("--seq-length", type=int, default=2048)
     parser.add_argument("--lora-rank", type=int, default=64)
     parser.add_argument("--lora-alpha", type=int, default=128)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--device", choices=["auto", "cpu"], default="auto",
         help="cpu forces use_cpu (macOS MPS + pin_memory segfaults in the "
         "weight-load path; pass --device cpu on this Mac); auto uses CUDA "
         "when available",
     )
+    parser.add_argument("--wandb", action="store_true")
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    try:
+        import numpy as np
+        np.random.seed(args.seed)
+    except ImportError:
+        pass
 
     root = Path(__file__).resolve().parent
     data_path = root / args.data if (root / args.data).exists() else args.data
@@ -62,6 +73,16 @@ def main():
     ds = Dataset.from_list(rows).map(build_text)
     tokenizer.pad_token = tokenizer.eos_token
 
+    report_to = "none"
+    if args.wandb:
+        import wandb
+        wandb.init(
+            project="crowdcheck-coderepair",
+            name=f"sft-{Path(args.base).name}-seed{args.seed}",
+            config=vars(args),
+        )
+        report_to = "wandb"
+
     sft_config = SFTConfig(
         use_cpu=args.device == "cpu",
         output_dir=str(output_dir),
@@ -79,6 +100,9 @@ def main():
         logging_steps=10,
         save_steps=200,
         max_grad_norm=1.0,
+        seed=args.seed,
+        data_seed=args.seed,
+        report_to=report_to,
     )
     peft_config = LoraConfig(
         task_type="CAUSAL_LM",

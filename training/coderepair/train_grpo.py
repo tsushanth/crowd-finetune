@@ -1,6 +1,7 @@
 import argparse
 import functools
 import json
+import random
 from pathlib import Path
 
 import torch
@@ -26,6 +27,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-6)
     parser.add_argument("--lora-rank", type=int, default=32)
     parser.add_argument("--lora-alpha", type=int, default=64)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--timeout", type=float, default=4.0)
     parser.add_argument("--hard", action="store_true")
     parser.add_argument(
@@ -41,7 +43,16 @@ def main():
         "weight-load path; pass --device cpu on this Mac); auto uses CUDA "
         "when available",
     )
+    parser.add_argument("--wandb", action="store_true")
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    try:
+        import numpy as np
+        np.random.seed(args.seed)
+    except ImportError:
+        pass
 
     root = Path(__file__).resolve().parent
     output_dir = root / args.output
@@ -88,6 +99,16 @@ def main():
     if args.reward == "test+format":
         reward_funcs.append(rewards.code_format_reward)
 
+    report_to = "none"
+    if args.wandb:
+        import wandb
+        wandb.init(
+            project="crowdcheck-coderepair",
+            name=f"grpo-{Path(args.base).name}-seed{args.seed}",
+            config=vars(args),
+        )
+        report_to = "wandb"
+
     grpo_config = GRPOConfig(
         use_cpu=args.device == "cpu",
         output_dir=str(output_dir),
@@ -103,7 +124,9 @@ def main():
         bf16=torch.cuda.is_available(),
         logging_steps=1,
         save_strategy="epoch",
-        report_to="none",
+        seed=args.seed,
+        data_seed=args.seed,
+        report_to=report_to,
     )
     peft_config = LoraConfig(
         task_type="CAUSAL_LM",

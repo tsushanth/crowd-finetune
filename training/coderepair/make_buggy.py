@@ -194,6 +194,7 @@ def build_row(question, code, problem, source, bug_type, buggy):
         "bug_type": bug_type,
         "buggy_code": buggy,
         "answer": code,
+        "system": formats.REPAIR_SYSTEM,
     }
 
 
@@ -203,20 +204,26 @@ def main():
     parser.add_argument("--mode", choices=["train", "eval"], default="train")
     parser.add_argument("--out", default="data/code_repair_train.jsonl")
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--variants", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--bug-type", choices=BUG_TYPES, default=None)
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
-    data_path = root / args.data if (root / args.data).exists() else args.data
-    rows = [
-        json.loads(line)
-        for line in Path(data_path).read_text().splitlines()
-        if line.strip()
-    ]
+    all_rows = []
+    for d in args.data.split(","):
+        d = d.strip()
+        if not d:
+            continue
+        data_path = root / d if (root / d).exists() else d
+        all_rows.extend([
+            json.loads(line)
+            for line in Path(data_path).read_text().splitlines()
+            if line.strip()
+        ])
     if args.limit:
-        rows = rows[: args.limit]
+        all_rows = all_rows[: args.limit]
 
     out = root / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -253,25 +260,48 @@ def main():
         norm = ast.unparse(ast.parse(code))
         if norm != code and not sbx.run(norm, problem_of(row))["ok"]:
             norm = code
-        variant = make_buggy_variant(norm, problem_of(row), seed=rng.randrange(1 << 30))
-        if not variant:
+        variants = []
+        tried = set()
+        for _ in range(args.variants * 5):
+            if len(variants) >= args.variants:
+                break
+            seed = rng.randrange(1 << 30)
+            if seed in tried:
+                continue
+            tried.add(seed)
+            variant = make_buggy_variant(norm, problem_of(row), seed=seed)
+            if not variant:
+                continue
+            bug_type, buggy = variant
+            key = (bug_type, buggy)
+            if key in {(_b, _c) for _b, _c in variants}:
+                continue
+            variants.append((bug_type, buggy))
+        if not variants:
             return None
-        bug_type, buggy = variant
-        return build_row(question, norm, problem_of(row), row.get("source"), bug_type, buggy)
+        traces = []
+        for i, (bug_type, buggy) in enumerate(variants):
+            src = row.get("source", "")
+            if i > 0:
+                src = f"{src}#v{i}"
+            traces.append(build_row(question, norm, problem_of(row), src, bug_type, buggy))
+        return traces
 
     kept = 0
-    seen = set()
+    seen_key = set()
     with out.open("w") as fh, ThreadPoolExecutor(max_workers=args.workers) as pool:
-        for trace in pool.map(work, rows, chunksize=1):
-            if not trace:
+        for traces in pool.map(work, all_rows, chunksize=1):
+            if not traces:
                 continue
-            if trace["source"] in seen:
-                continue
-            seen.add(trace["source"])
-            kept += 1
-            fh.write(json.dumps(trace) + "\n")
-            fh.flush()
-    print(f"kept {kept}/{len(rows)} buggy variants -> {out}")
+            for trace in traces:
+                key = (trace["source"], trace["bug_type"], trace["buggy_code"])
+                if key in seen_key:
+                    continue
+                seen_key.add(key)
+                kept += 1
+                fh.write(json.dumps(trace) + "\n")
+                fh.flush()
+    print(f"kept {kept}/{len(all_rows)} buggy variants -> {out}")
 
 
 if __name__ == "__main__":

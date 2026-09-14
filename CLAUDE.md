@@ -372,16 +372,18 @@ a 7B in the same pattern would need the rented GPU.
 
 ## code-repair track (branch `niche/code-repair`, worktree crowd-finetune-coderepair)
 
-Second niche, phase 1 built and smoke-verified end-to-end: verifiable code
-generation where the reward is a MECHANICAL unit-test pass/fail (no LLM judge).
-Given a docstring/signature + unit tests (HumanEval/MBPP-style), the model
-generates a full function def inside `<reasoning>/<answer>` tags; a hardened
-subprocess sandbox runs the tests per completion, isolated from the training
-loop. SFT on test-verified teacher traces, then GRPO with the test-pass reward.
-Phase-2 variant (buggy fn + failing test + trace -> patch) is NOT built yet.
+Phase 1 (docstring → code) and Phase 2 (buggy fn + failing tests → patch)
+both built and smoke-verified end-to-end. The reward is a MECHANICAL
+unit-test pass/fail (no LLM judge). Given a docstring/signature + unit tests
+(HumanEval/MBPP-style), the model generates a full function def inside
+`<reasoning>/<answer>` tags; a hardened subprocess sandbox runs the tests per
+completion, isolated from the training loop. SFT on test-verified teacher
+traces, then GRPO with the test-pass reward, then optional DPO on own
+rollouts as a more stable alternative to GRPO.
 
-Files: `training/coderepair/{sandbox,formats,rewards,teacher,datasets,distill,
-prep_data,train_sft,train_grpo,eval_code}.py`, `run_on_gpu.sh`,
+Files: `training/coderepair/{sandbox,formats,rewards,teacher,datasets,distill,distill_repair,
+make_buggy,prep_data,train_sft,train_grpo,train_dpo,collect_rollouts,make_dpo,
+eval_code}.py`, `run_on_gpu.sh`, `run_repair_on_gpu.sh`, `sweep_dpo.sh`,
 `requirements.txt`. Reuses `training/reasoning/{formats,merge,requirements}`.
 
 Real numbers from the CPU smoke (this Mac, no GPU box):
@@ -400,18 +402,22 @@ Real numbers from the CPU smoke (this Mac, no GPU box):
   traces (HumanEval/17/30/52/66/121/123/124/127/137/18) are ALL now eval-50
   rows -> they are NOT re-usable as SFT data (eval leakage); the final SFT set
   is built only from traces of the current 114-row train split.
-- distill: 10/12 (83%) teacher traces kept after sandbox verification.
-  deepseek-r1-0528 402s on long outputs (OpenRouter credits ran dry; after
-  top-up it still doesn't hold the code tag shape) -> coderepair teacher
-  default is now deepseek/deepseek-v3.2 (DEFAULT_TEACHER), NOT
-  config.TEACHER_MODEL. Trace schema: question/reasoning/answer/tests/
-  entry_point/imports/source.
-- FULL distill run DONE (on the 114-row train split, deepseek-v3.2): 77/114
-  test-verified traces -> training/coderepair/data/code_sft_full.jsonl; final
-  SFT file rebuilt from it alone via prep_data (dedupe by source, shuffle s42)
-  -> training/coderepair/data/code_sft.jsonl (77 rows, all in-train, 0 eval
-  leakage; extract+parse via formats, sandbox-verified). Gitignored -> must be
-  rsync'd to the box (a git sync won't carry it).
+- make_buggy.py: AST mutators (wrong_operator/off_by_one/wrong_var/invert_cond/
+  drop_guard), sandbox-verifies each buggy variant compiles + fails >=1 test.
+  `--variants N` generates up to N unique buggy variants per source problem
+  (default 1), yielding source keys like `HumanEval/157#v1`. Deduplication is
+  by `(source, bug_type, buggy_code)` so multi-variant rows are preserved.
+  `--data` accepts comma-separated files for combined HumanEval+MBPP input.
+  `build_row()` adds `"system": formats.REPAIR_SYSTEM` so downstream
+  training/eval uses the correct repair prompt (previously fell back to
+  CODE_SYSTEM, a real eval bug).
+- distill_repair.py: teacher distills fix traces under REPAIR_SYSTEM,
+  sandbox-verified. Same ThreadPool pattern as distill.py.
+- REPAIR_SYSTEM / build_repair_question: the repair prompt shows the buggy
+  function + failing tests and asks for the corrected function.
+- Phase-2 train/eval split: 142 train variants (from 77 phase-1 SFT traces,
+  3 variants each, deduped), 27 eval (from 50 held-out eval rows, teacher-
+  solved first then bug-injected).
 - SFT: Qwen2.5-0.5B-Instruct, 4 traces, 1 epoch, CPU -> loss 1.633, ~78s.
   Then merge.py adapter -> dense checkpoint before GRPO (GRPOTrainer loads a
   dense base, NOT a LoRA dir).
@@ -419,10 +425,15 @@ Real numbers from the CPU smoke (this Mac, no GPU box):
   MPS+pin_memory segfaults in the weight-load path -> train_sft.py /
   train_grpo.py gained `--device {cpu,auto}` (use_cpu), default cpu. CUDA
   boxes: `--device auto` sets bf16=True via torch.cuda.is_available().
-- GRPO: 4 rows x 2 gens, viable end-to-end (generation -> sandbox ->
-  reward -> step) but max_completion=256 clipped EVERY completion
-  (clipped_ratio 1.0) -> flat reward -1, ~0 gradient (loss 0.1248, 188s).
-  Real runs must keep max_completion >= 1024 so code + closing tags finish.
+- DPO pipeline (`collect_rollouts.py`, `make_dpo.py`, `train_dpo.py`):
+  RLAIF on own rollouts. `collect_rollouts` samples N completions/prompt from
+  the best merged checkpoint (GRPO-merged or SFT-merged), scores them with the
+  same sandbox rewards as GRPO (test_pass hard + format), computes group-
+  normalized advantages. `make_dpo` picks chosen=highest-advantage correct /
+  rejected=worst wrong. `train_dpo` does LoRA DPO on top of the merged SFT
+  checkpoint. All three trainers take `--seed`/`--device`/`--wandb`.
+- `sweep_dpo.sh`: 3-seed DPO sweep + pairwise win matrix on repair eval.
+  Needs `outputs/code-repair-sft-merged` + rollouts already collected.
 - eval baseline (eval-8, pass@1): Qwen2.5-3B base 0.625, openai/gpt-4o-mini
   0.75, anthropic/claude-3-haiku 0.75. Local 3B was CPU (48 tok/s); the
   tuned-model row needs `--adapter` (smoke compared base vs base).
@@ -469,6 +480,18 @@ the 50 hidden-test eval rows. REAL NUMBERS:
   stopped box (start instance -> re-ssh; steps [1-5] are fast).
 - Verified pre-run (unchanged): `bash -n` clean; datasets split reproduces
   byte-for-byte; eval_code CWD-relative outs; merge absolute outputs.
-Semi-open items: MBPP entry_point extraction, the harder repair variant
-(phase 2), eval on MBPP, and pushing data/RL scale until the tuned models
-clear base 0.52.
+- Phase-2 GPU run provisioned to Vast box (instance 50824587) but the box
+  is currently STOPPED/unreachable. Before restarting: `vastai start instance
+  50824587`, then re-sync repo + the NEW data files (code_repair_train.jsonl
+  142 rows, code_repair_eval.jsonl 27 rows) since git ignores them.
+- Data volume is the main lever now: 142 repair train variants (was 51), 46
+  SFT traces distilled from them (in progress; distill_repair.py timed out
+  after 600s locally — run on the box or with smaller --workers). The DPO
+  pipeline adds a second RL stage that may be more stable than GRPO.
+- MBPP is wired into the pipeline at the datasets layer: run
+  `datasets.py --datasets humaneval,mbpp` to get combined train/eval, then
+  `distill.py --data data/code_train.jsonl` -> combined SFT -> make_buggy.py.
+  The default make_buggy.py `--data` is `data/code_sft.jsonl`; comma-
+  separated paths are accepted.
+- Semi-open items: tuned model still needs to clear base 0.52; DPO step
+  untested end-to-end on 3B; box restart + phase-2 rerun with new data.
