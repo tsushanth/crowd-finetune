@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Deploy + train toolcall 7B LoRA on Vast box 50776326
-# Usage: bash deploy_toolcall_7b.sh
 set -euo pipefail
 
 LOCALREPO="/Users/sushanthtiruvaipati/Documents/Default Project/crowd-finetune"
@@ -8,6 +6,7 @@ INSTANCE="50776326"
 HOST="ssh7.vast.ai"
 PORT="16326"
 VAST="/tmp/pv/bin/vastai"
+REPO_PATH="/workspace/coderepair"
 
 echo "== start instance $INSTANCE =="
 $VAST start instance "$INSTANCE" 2>&1 || true
@@ -38,48 +37,83 @@ for i in $(seq 1 60); do
 done
 $SSH 'true' || { echo "ssh never came up"; exit 1; }
 
-echo "== sync repo =="
-$SSH 'cd /root/crowd-finetune && git fetch -q origin && git reset --hard -q origin/main && git log --oneline -1'
+echo "== ensure repo exists =="
+$SSH "if [ ! -d $REPO_PATH/.git ]; then git clone -q https://github.com/tsushanth/crowd-finetune.git $REPO_PATH; else cd $REPO_PATH && git fetch -q origin && git reset --hard -q origin/main; fi"
+$SSH "cd $REPO_PATH && git log --oneline -1"
+
+echo "== probe vllm =="
+$SSH "
+if [ -x /workspace/vllmvenv/bin/vllm ]; then
+  echo 'vllmvenv present'
+elif /workspace/vllmvenv/bin/python -c 'import vllm' 2>/dev/null; then
+  echo 'vllmvenv present (python)'
+else
+  echo 'creating vllmvenv'
+  python3 -m venv /workspace/vllmvenv && /workspace/vllmvenv/bin/pip install -q -U pip &&
+  /workspace/vllmvenv/bin/pip install -q 'vllm==0.29.0' 'flashinfer-python==0.6.18'
+  echo 'vllmvenv created'
+fi"
+$SSH "/workspace/vllmvenv/bin/python -c 'import vllm' 2>&1 | tail -1 || true"
 
 echo "== sync data files =="
 rsync -az -e "ssh -p $PORT" \
   "$LOCALREPO/data/toolcall_sft.jsonl" \
+  "$LOCALREPO/data/toolcall_corpus.jsonl" \
+  "$LOCALREPO/data/bench.jsonl" \
   "$LOCALREPO/.env" \
-  root@$HOST:/root/crowd-finetune/
+  root@$HOST:$REPO_PATH/
 
 echo "== install deps =="
-$SSH 'cd /root/crowd-finetune && python -m pip install -q -r training/reasoning/requirements.txt peft transformers datasets accelerate bitsandbytes'
+$SSH "cd $REPO_PATH && python3 -m pip install -q peft transformers accelerate"
 
 echo "== train 7B LoRA on toolcall data (499 rows, 3 epochs) =="
-$SSH 'cd /root/crowd-finetune && export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True && python -m training.train_lora \
+$SSH "cd $REPO_PATH && export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True && python3 -m training.train_lora \
   --data data/toolcall_sft.jsonl \
   --base Qwen/Qwen2.5-7B-Instruct \
   --out outputs/toolcall-7b-lora \
   --epochs 3 \
   --max-len 512 \
   --batch 1 \
-  --grad-accum 16 \
-  --lr 1e-4'
+  --grad-accum 8 \
+  --lr 1e-4"
 
-echo "== eval on toolcall bench =="
-$SSH 'cd /root/crowd-finetune && python -m training.eval_toolcall \
-  --model outputs/toolcall-7b-lora \
-  --out data/toolcall_7b_eval.json'
+echo "== merge LoRA -> dense checkpoint =="
+$SSH "cd $REPO_PATH && python3 -m training.reasoning.merge \
+  --base Qwen/Qwen2.5-7B-Instruct \
+  --adapter outputs/toolcall-7b-lora \
+  --output $REPO_PATH/outputs/toolcall-7b-lora-merged"
 
-echo "== pull results =="
-rsync -az -e "ssh -p $PORT" \
-  root@$HOST:/root/crowd-finetune/data/toolcall_7b_eval.json \
-  "$LOCALREPO/data/"
+echo "== kill any existing vllm =="
+$SSH "pkill -f 'vllm serve' 2>/dev/null || true; sleep 2"
 
-echo "== serve checkpoint =="
-$SSH 'cd /root/crowd-finetune && nohup bash training/reasoning/serve.sh \
-  MODEL=outputs/toolcall-7b-lora \
-  PORT=8001 \
-  > /root/vllm_serve.log 2>&1 &'
+echo "== start vLLM serve (merged 7B) =="
+$SSH "cd $REPO_PATH && setsid nohup env VLLM_USE_FLASHINFER_SAMPLER=0 \
+  /workspace/vllmvenv/bin/vllm serve outputs/toolcall-7b-lora-merged \
+  --port 8001 --max-model-len 4096 --gpu-memory-utilization 0.90 \
+  --dtype bfloat16 > /workspace/vllm_serve.log 2>&1 < /dev/null &"
+
+echo "== wait for vLLM health (up to 120s) =="
+for i in $(seq 1 24); do
+  sleep 5
+  if $SSH "curl -s -m 3 http://127.0.0.1:8001/health" 2>/dev/null | grep -q ok; then
+    echo "  vLLM healthy!"
+    break
+  fi
+  echo "  ($i/24) waiting..."
+done
+
+echo "== bench throughput =="
+$SSH "cd $REPO_PATH && /workspace/vllmvenv/bin/python training/bench_serve.py \
+  --model toolcall-7b-lora --bench data/toolcall_corpus.jsonl \
+  --gpu-rate 1.0 --concurrency 8 --repeats 4 --max-new 64" 2>&1 | tee /tmp/vllm_bench_7b.log
+
+echo "== pull bench results =="
+rsync -az -e "ssh -p $PORT" root@$HOST:$REPO_PATH/data/evals/ "$LOCALREPO/data/evals_7b/" 2>/dev/null || true
 
 echo ""
 echo "=== DEPLOYED ==="
-echo "Checkpoint: outputs/toolcall-7b-lora"
-echo "Eval:       data/toolcall_7b_eval.json"
-echo "Monitor:    $SSH 'tail -f /root/vllm_serve.log'"
+echo "Adapter:    outputs/toolcall-7b-lora"
+echo "Merged:     outputs/toolcall-7b-lora-merged"
+echo "Bench log:  /tmp/vllm_bench_7b.log"
+echo "Monitor:    $SSH 'tail -f /workspace/vllm_serve.log'"
 echo "Test:       curl http://$HOST:8001/v1/models"
