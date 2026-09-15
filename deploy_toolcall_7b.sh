@@ -2,9 +2,9 @@
 set -euo pipefail
 
 LOCALREPO="/Users/sushanthtiruvaipati/Documents/Default Project/crowd-finetune"
-INSTANCE="50776326"
+INSTANCE="51027615"
 HOST="ssh7.vast.ai"
-PORT="16326"
+PORT="27614"
 VAST="/tmp/pv/bin/vastai"
 REPO_PATH="/workspace/coderepair"
 
