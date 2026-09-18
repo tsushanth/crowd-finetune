@@ -26,6 +26,11 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-6)
     parser.add_argument("--lora-rank", type=int, default=32)
     parser.add_argument("--lora-alpha", type=int, default=64)
+    parser.add_argument("--reward", choices=["outcome", "prm", "prm+outcome"], default="outcome",
+                        help="outcome = exact-match (original); prm = step-level PRM replaces exact-match; "
+                        "prm+outcome = both")
+    parser.add_argument("--prm", default="outputs/prm", help="PRM dir (relative to this package or absolute)")
+    parser.add_argument("--prm-aggregate", choices=["min", "mean"], default="min")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -78,9 +83,16 @@ def main():
         target_modules="all-linear",
     )
 
+    reward_funcs = [rewards.format_reward, rewards.length_reward]
+    if args.reward in ("outcome", "prm+outcome"):
+        reward_funcs.insert(0, rewards.exact_match_reward)
+    if args.reward in ("prm", "prm+outcome"):
+        reward_funcs.insert(0, rewards.make_prm_reward(resolve(args.prm), args.prm_aggregate))
+    print(f"reward mode: {args.reward} -> {[f.__name__ for f in reward_funcs]}")
+
     trainer = GRPOTrainer(
         model=base_model,
-        reward_funcs=[rewards.exact_match_reward, rewards.format_reward, rewards.length_reward],
+        reward_funcs=reward_funcs,
         args=grpo_config,
         train_dataset=ds,
         processing_class=tokenizer,

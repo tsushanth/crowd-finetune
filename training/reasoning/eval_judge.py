@@ -33,7 +33,8 @@ def local_completion(model_name, adapter, question, max_new):
     out = _model.generate(
         **inputs, max_new_tokens=max_new, do_sample=False
     )
-    return _tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+    gen = out[0][inputs["input_ids"].shape[1]:]
+    return _tokenizer.decode(gen, skip_special_tokens=True), int((gen != _tokenizer.pad_token_id).sum())
 
 
 def remote_completion(endpoint, model, question, max_new, api_key=None):
@@ -49,7 +50,9 @@ def remote_completion(endpoint, model, question, max_new, api_key=None):
     }
     resp = httpx.post(url, headers=headers, json=payload, timeout=180)
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    body = resp.json()
+    return (body["choices"][0]["message"]["content"],
+            (body.get("usage") or {}).get("completion_tokens"))
 
 
 def reference_mode(raw_answer: str) -> str:
@@ -123,7 +126,7 @@ def main():
             else args.answer_mode
         )
         if args.endpoint:
-            predicted = remote_completion(
+            predicted, n_tok = remote_completion(
                 args.endpoint, args.served_model, question, args.max_new, args.api_key
             )
         else:
@@ -133,17 +136,20 @@ def main():
             if args.adapter:
                 candidate = root / args.adapter
                 adapter_path = str(candidate) if candidate.exists() else args.adapter
-            predicted = local_completion(
+            predicted, n_tok = local_completion(
                 model_path, adapter_path, question, args.max_new
             )
         ok = matches(predicted, raw_answer, mode, strict=args.strict)
         answer = formats.parse_completion(predicted)["answer"] or predicted.strip()
         rows.append(
-            {"expected": raw_answer[:80], "predicted": answer[:80], "mode": mode, "ok": ok}
+            {"expected": raw_answer[:80], "predicted": answer[:80], "mode": mode, "ok": ok,
+             "output_tokens": n_tok}
         )
         print(f"{'OK ' if ok else 'XX '} [{mode:6}] expected={rows[-1]['expected']!r} predicted={rows[-1]['predicted']!r}")
 
     accuracy = sum(1 for r in rows if r["ok"]) / len(rows) if rows else 0.0
+    toks = [r["output_tokens"] for r in rows if r["output_tokens"] is not None]
+    toks_ok = [r["output_tokens"] for r in rows if r["ok"] and r["output_tokens"] is not None]
     out = root / args.output
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
@@ -153,6 +159,8 @@ def main():
                 "dataset": args.dataset,
                 "n": len(rows),
                 "accuracy": round(accuracy, 4),
+                "avg_output_tokens": round(sum(toks) / len(toks), 1) if toks else None,
+                "avg_output_tokens_correct": round(sum(toks_ok) / len(toks_ok), 1) if toks_ok else None,
                 "rows": rows,
             },
             indent=2,
