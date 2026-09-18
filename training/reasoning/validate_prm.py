@@ -28,6 +28,7 @@ def main():
     ap.add_argument("--max-new", type=int, default=512)
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--no-system", action="store_true", help="omit the tag-format system prompt (use for SFT models)")
+    ap.add_argument("--reuse", default=None, help="rescore the samples in this json instead of generating")
     ap.add_argument("--output", default="data/prm_validation.json")
     args = ap.parse_args()
 
@@ -35,10 +36,11 @@ def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     ds = load_dataset("openai/gsm8k", "main", split="test").select(range(args.start, args.start + args.count))
 
-    tok = AutoTokenizer.from_pretrained(args.policy, padding_side="left")
-    pol = AutoModelForCausalLM.from_pretrained(args.policy, torch_dtype=torch.bfloat16).to(dev).eval()
     jobs = []
-    for ex in ds:
+    rows = json.loads((root / args.reuse).read_text())["rows"] if args.reuse else None
+    tok = AutoTokenizer.from_pretrained(args.policy, padding_side="left") if rows is None else None
+    pol = None if rows is not None else AutoModelForCausalLM.from_pretrained(args.policy, torch_dtype=torch.bfloat16).to(dev).eval()
+    for ex in (ds if rows is None else []):
         prompt = tok.apply_chat_template(
             ([] if args.no_system else [{"role": "system", "content": formats.TEACHER_SYSTEM}])
             + [{"role": "user", "content": ex["question"]}],
@@ -46,7 +48,7 @@ def main():
         ref = formats.extract_last_number(ex["answer"].split("####")[-1])
         jobs += [(ex["question"], prompt, ref)] * args.samples
 
-    rows = []
+    rows = rows if rows is not None else []
     for i in range(0, len(jobs), args.batch):
         chunk = jobs[i:i + args.batch]
         enc = tok([j[1] for j in chunk], return_tensors="pt", padding=True).to(dev)

@@ -47,6 +47,7 @@ def main():
         "data/reasoning_sft.jsonl", "data/reasoning_sft_more.jsonl",
         "data/reasoning_sft_more2.jsonl", "data/reasoning_sft_more3.jsonl"])
     ap.add_argument("--data-root", default=None, help="dir the --data paths are relative to (default: this package)")
+    ap.add_argument("--extra", nargs="*", default=[], help="prebuilt chains jsonl (gen_real_negatives) added to TRAIN only")
     ap.add_argument("--output", default="outputs/prm")
     ap.add_argument("--epochs", type=float, default=2.0)
     ap.add_argument("--batch", type=int, default=8)
@@ -66,10 +67,16 @@ def main():
     train_rows, val_rows = P.split_by_question(rows, 0.15, args.seed)
     train = P.build_examples(train_rows, args.seed, args.negs)
     val = P.build_examples(val_rows, args.seed + 1, args.negs)
+    for p in args.extra:
+        extra = [json.loads(l) for l in (root / p).read_text().splitlines() if l.strip()]
+        train += extra
+        print(f"+{len(extra)} real chains from {p} "
+              f"({sum(e['kind'] == 'real_neg' for e in extra)} neg)", flush=True)
     print(f"{len(rows)} unique questions -> train {len(train_rows)}q/{len(train)} chains, "
           f"val {len(val_rows)}q/{len(val)} chains (split by question)", flush=True)
 
-    dtype = torch.bfloat16 if args.device == "cuda" else torch.float32
+    dtype = torch.float32  # fp32 master weights; bf16 AdamW updates at lr 5e-5 underflow
+    torch.backends.cuda.matmul.allow_tf32 = True
     model = P.PRM.build(args.base, dtype)
     model.backbone.to(args.device)
     model.head.to(args.device)
