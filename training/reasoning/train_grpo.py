@@ -31,6 +31,10 @@ def main():
                         "prm+outcome = both")
     parser.add_argument("--prm", default="outputs/prm", help="PRM dir (relative to this package or absolute)")
     parser.add_argument("--prm-aggregate", choices=["min", "mean"], default="min")
+    parser.add_argument("--prompts-file", default=None,
+                        help="JSONL with question/answer columns (see make_grpo_pool.py); replaces --dataset")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--cpu", action="store_true", help="force CPU (local smoke tests)")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -54,7 +58,11 @@ def main():
         )
         return {"prompt": prompt, "answer": reference}
 
-    ds = load_dataset(args.dataset, args.config_name, split=args.split)
+    if args.prompts_file:
+        pf = root / args.prompts_file
+        ds = load_dataset("json", data_files=str(pf if pf.exists() else args.prompts_file), split="train")
+    else:
+        ds = load_dataset(args.dataset, args.config_name, split=args.split)
     ds = ds.select(range(min(args.limit, len(ds)))).map(prepare)
     ds = ds.filter(lambda ex: bool(ex["answer"]))
     print(f"{len(ds)} RL rows")
@@ -70,7 +78,9 @@ def main():
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
         beta=0.04,
-        bf16=torch.cuda.is_available(),
+        bf16=torch.cuda.is_available() and not args.cpu,
+        use_cpu=args.cpu,
+        seed=args.seed,
         logging_steps=1,
         save_strategy="epoch",
         report_to="none",

@@ -116,6 +116,7 @@ def main():
     parser.add_argument("--max-new", type=int, default=512)
     parser.add_argument("--answer-mode", choices=["auto", "number", "string"], default="auto")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--save-text", action="store_true", help="store each full completion in the output rows")
     parser.add_argument("--batch", type=int, default=1, help="local batched decoding (1 = original one-at-a-time)")
     parser.add_argument("--question-col", default=None)
     parser.add_argument("--answer-col", default="answer")
@@ -182,7 +183,7 @@ def main():
         answer = formats.parse_completion(predicted)["answer"] or predicted.strip()
         rows.append(
             {"expected": raw_answer[:80], "predicted": answer[:80], "mode": mode, "ok": ok,
-             "output_tokens": n_tok}
+             "output_tokens": n_tok, **({"question": question, "text": predicted} if args.save_text else {})}
         )
         print(f"{'OK ' if ok else 'XX '} [{mode:6}] expected={rows[-1]['expected']!r} predicted={rows[-1]['predicted']!r}")
 
