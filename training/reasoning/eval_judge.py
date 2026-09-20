@@ -37,6 +37,31 @@ def local_completion(model_name, adapter, question, max_new):
     return _tokenizer.decode(gen, skip_special_tokens=True), int((gen != _tokenizer.pad_token_id).sum())
 
 
+def local_completions(model_name, adapter, questions, max_new, batch):
+    """Batched greedy decoding (left padding). Returns [(text, n_output_tokens)]."""
+    local_completion(model_name, adapter, questions[0], 1)  # loads the global model
+    import torch
+
+    _tokenizer.padding_side = "left"
+    prompts = [
+        _tokenizer.apply_chat_template(
+            [{"role": "user", "content": q}], tokenize=False, add_generation_prompt=True
+        )
+        for q in questions
+    ]
+    results = []
+    for i in range(0, len(prompts), batch):
+        enc = _tokenizer(prompts[i:i + batch], return_tensors="pt", padding=True).to(_model.device)
+        with torch.no_grad():
+            out = _model.generate(**enc, max_new_tokens=max_new, do_sample=False)
+        gen = out[:, enc["input_ids"].shape[1]:]
+        for g in gen:
+            results.append((_tokenizer.decode(g, skip_special_tokens=True),
+                            int((g != _tokenizer.pad_token_id).sum())))
+        print(f"generated {len(results)}/{len(prompts)}", flush=True)
+    return results
+
+
 def remote_completion(endpoint, model, question, max_new, api_key=None):
     url = endpoint.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
@@ -91,6 +116,7 @@ def main():
     parser.add_argument("--max-new", type=int, default=512)
     parser.add_argument("--answer-mode", choices=["auto", "number", "string"], default="auto")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--batch", type=int, default=1, help="local batched decoding (1 = original one-at-a-time)")
     parser.add_argument("--question-col", default=None)
     parser.add_argument("--answer-col", default="answer")
     parser.add_argument("--output", default="data/eval_results.json")
@@ -113,8 +139,19 @@ def main():
             ds = load_dataset(args.dataset, name, split=args.split)
     ds = ds.select(range(min(args.limit, len(ds))))
 
+    pre = None
+    if not args.endpoint and args.batch > 1:
+        qcol = args.question_col or ("problem" if "problem" in ds[0] else "question")
+        candidate = root / args.model
+        model_path = str(candidate) if candidate.exists() else args.model
+        adapter_path = None
+        if args.adapter:
+            candidate = root / args.adapter
+            adapter_path = str(candidate) if candidate.exists() else args.adapter
+        pre = local_completions(model_path, adapter_path, [e[qcol] for e in ds], args.max_new, args.batch)
+
     rows = []
-    for example in ds:
+    for idx, example in enumerate(ds):
         question_col = args.question_col or (
             "problem" if "problem" in example else "question"
         )
@@ -125,7 +162,9 @@ def main():
             if args.answer_mode == "auto"
             else args.answer_mode
         )
-        if args.endpoint:
+        if pre is not None:
+            predicted, n_tok = pre[idx]
+        elif args.endpoint:
             predicted, n_tok = remote_completion(
                 args.endpoint, args.served_model, question, args.max_new, args.api_key
             )
