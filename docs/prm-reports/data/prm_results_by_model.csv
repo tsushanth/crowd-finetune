@@ -1,0 +1,13 @@
+policy,model,n_chains,auroc_min,auroc_mean,auroc_min_equal_step_count
+SFT,v0_synthetic_cpu,596,0.6986,0.6801,0.6863
+SFT,v1_synthetic_top8,596,0.6894,0.6493,0.6835
+SFT,v1_real4_top8,596,0.7636,0.7361,0.7503
+SFT,v2_synthetic_seed0,596,0.6864,0.6531,0.6838
+SFT,v2_synthetic_seed1,596,0.7056,0.6645,0.6818
+SFT,v2_synthetic_seed2,596,0.6861,0.6391,0.7125
+SFT,v2_real8_seed0,596,0.8074,0.7918,0.795
+SFT,v2_real8_seed1,596,0.7829,0.7725,0.7615
+SFT,v2_real8_seed2,596,0.8093,0.7908,0.8036
+SFT,length_only,596,0.7326,,
+base (fallback splitter),v0_synthetic_cpu,600,0.7203,0.7025,
+base (fallback splitter),length_only,600,0.7662,,

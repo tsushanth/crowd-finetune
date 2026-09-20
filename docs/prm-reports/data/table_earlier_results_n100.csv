@@ -1,0 +1,4 @@
+model,gsm8k_accuracy,math500_strict_accuracy
+Base,0.77,0.39
+SFT,0.82,0.39
+"GRPO, exact-match reward",0.79,0.38

@@ -81,9 +81,11 @@ The base model does not follow the tag format, so 0 of 600 could be parsed as tr
 
 | Score | AUROC |
 |---|---|
-| PRM, weakest step | 0.719 |
-| PRM, mean step | 0.704 |
+| PRM, weakest step | 0.720 |
+| PRM, mean step | 0.703 |
 | Length-only rule | 0.766 |
+
+These values come from re-scoring the saved samples on CPU in 32-bit precision so that anyone can regenerate them (`tools/extract_per_chain.py --base`). The original run on a GPU in bf16 gave 0.719 and 0.704.
 
 Average weakest-step score: 0.80 for right chains, 0.50 for wrong ones. Bullet lists, LaTeX and section headers are nothing like the training data, so this is a stress test, not a verdict.
 
@@ -128,6 +130,8 @@ python -m training.reasoning.validate_prm \
 ```
 
 Saved locally (untracked): `data/prm_validation.json` (base model) and `data/prm_validation_sft.json` (SFT model), each with all 600 solutions, labels and scores.
+
+The data behind the chart, and per-chain scores for every chain, are in `docs/prm-reports/data/` (`fig_validation.csv`, `per_chain_sft.csv`, `per_chain_base_fallback.csv`). `tools/analysis.py` recomputes every AUROC in this report from the per-chain files.
 
 # Appendix
 

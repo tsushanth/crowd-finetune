@@ -1,0 +1,9 @@
+quantity,estimate,range_low_2.5pct,range_high_97.5pct
+"v2: real negatives (8 rollouts), 3-seed mean",0.8,0.751,0.843
+"v2: synthetic only, 3-seed mean",0.693,0.641,0.748
+length-only baseline,0.733,0.676,0.789
+difference: real minus synthetic,0.107,0.073,0.153
+difference: real minus length-only,0.067,0.003,0.132
+"v1: real negatives (4 rollouts), 1 seed",0.764,0.707,0.816
+"v1: synthetic only, 1 seed",0.689,0.623,0.752
+v1 difference: real minus synthetic,0.074,0.006,0.144

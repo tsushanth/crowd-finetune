@@ -1,0 +1,5 @@
+variant,detail,auroc,range_low,range_high,headline
+Synthetic negatives only,3-seed mean,0.693,0.641,0.748,0
+"+ real negatives, 4 rollouts","1 seed, 600 wrong chains",0.764,0.707,0.816,0
+"+ real negatives, 8 rollouts","3-seed mean, 900 wrong chains",0.8,0.751,0.843,1
+Length-only baseline,shorter answer = right,0.733,0.676,0.789,0

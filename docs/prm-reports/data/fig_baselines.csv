@@ -1,0 +1,6 @@
+test,run,n,accuracy,range_low,range_high,range_method,avg_output_tokens,avg_output_tokens_correct
+GSM8K,Earlier SFT run,100,0.82,0.745,0.895,normal approximation,,
+GSM8K,Retrained SFT,100,0.76,0.676,0.844,normal approximation,104.9,96.7
+GSM8K,Retrained SFT,300,0.797,0.751,0.842,normal approximation,104.9,100.3
+MATH-500 strict,Retrained SFT,100,0.38,0.285,0.475,normal approximation,241.1,171.9
+MATH-500 strict,Retrained SFT,300,0.35,0.296,0.404,normal approximation,259.8,179.0

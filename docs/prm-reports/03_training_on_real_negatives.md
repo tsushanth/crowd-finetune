@@ -150,7 +150,9 @@ python -m training.reasoning.validate_prm --reuse data/prm_validation_sft.json \
    --prm outputs/prm_real_s0 --output data/val_real_s0.json
 ```
 
-Rollout generation ran at roughly 4 rollouts per second on one RTX 4090 with plain batched generation, so 30,296 rollouts dominated the run. Each PRM trained in a few minutes (six trainings plus six rescorings finished in well under half an hour). Training data (`prm_real.jsonl`, `prm_real_v2.jsonl`) and all scoring results are saved locally and are not tracked by git. Trained PRM weights from these runs were lost when the GPU machine was deleted; retraining from the saved data takes minutes.
+Rollout generation ran at roughly 4 rollouts per second on one RTX 4090 with plain batched generation, so 30,296 rollouts dominated the run. Each PRM trained in a few minutes (six trainings plus six rescorings finished in well under half an hour). Training data (`prm_real.jsonl`, `prm_real_v2.jsonl`) and all scoring results are saved locally and are not tracked by git.
+
+The data behind the charts and tables is in `docs/prm-reports/data/`: `fig_auroc_arms.csv`, `fig_label_hist.csv`, `prm_results_by_model.csv` (every model, every seed) and `prm_bootstrap_ranges.csv`, plus the per-chain scores in `per_chain_sft.csv`. `tools/analysis.py` recomputes the AUROCs and the question-level bootstrap ranges from the per-chain file and reproduces the values in this report. Trained PRM weights from these runs were lost when the GPU machine was deleted; retraining from the saved data takes minutes.
 
 # Appendix
 

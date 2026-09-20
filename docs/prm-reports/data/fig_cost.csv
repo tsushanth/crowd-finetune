@@ -1,0 +1,6 @@
+phase,credit_before_usd,credit_after_usd,approx_cost_usd
+PRM check (base + SFT samples),25.95,25.76,0.19
+SFT + first baseline evals,25.76,25.49,0.27
+"Real-negative PRM, v1",25.49,25.05,0.44
+"Real-negative PRM, v2 (8 rollouts)",25.05,23.86,1.19
+SFT re-baseline at n=300,23.86,23.53,0.33

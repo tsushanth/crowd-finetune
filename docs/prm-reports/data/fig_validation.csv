@@ -1,0 +1,8 @@
+policy_samples,score,auroc
+"Base model samples (markdown output, fallback step splitter)","PRM, weakest-step score",0.72
+"Base model samples (markdown output, fallback step splitter)","PRM, mean step score",0.703
+"Base model samples (markdown output, fallback step splitter)",Length-only baseline,0.766
+SFT model samples (matches the PRM's training format),"PRM, weakest-step score",0.699
+SFT model samples (matches the PRM's training format),"PRM, mean step score",0.68
+SFT model samples (matches the PRM's training format),"PRM, weakest-step, equal step count",0.686
+SFT model samples (matches the PRM's training format),Length-only baseline,0.733

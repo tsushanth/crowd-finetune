@@ -128,6 +128,8 @@ python -m training.reasoning.eval_judge --model outputs/reasoning-sft-merged \
    --output data/eval300_sft_math.json
 ```
 
+The data behind the chart is in `docs/prm-reports/data/fig_baselines.csv`, and the earlier n=100 results in `table_earlier_results_n100.csv`.
+
 Software pins: torch 2.6.0 (CUDA 12.4), transformers 5.17.0, trl 1.13.0, peft 0.20.0, datasets 5.0.1.
 
 Saved locally (untracked): `data/eval_sft_tok.json` and `data/eval_sft_math_tok.json` (n=100), `data/eval300_sft_gsm8k.json` and `data/eval300_sft_math.json` (n=300), each with per-question rows.

@@ -130,6 +130,8 @@ The checkout at `crowd-finetune` is shared. Work was done in a second worktree, 
 
 Branch `reasoning/prm` on the remote repository; commits 79952a9 (PRM, GRPO reward hook, length tracking), 7357d50 (validation script), 4f73906 (real-negative data) and 31cf5cc (batched decoding in `eval_judge.py`).
 
+The data behind the cost chart and the machines table is in `docs/prm-reports/data/` (`fig_cost.csv`, `table_machines.csv`).
+
 The job scripts used on the machines were throwaway shell files (SFT and merge, sampling and labelling, PRM training and scoring, evaluation) and were not kept in the repository. Each report lists the underlying commands.
 
 # Appendix

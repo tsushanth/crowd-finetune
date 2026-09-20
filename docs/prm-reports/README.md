@@ -15,8 +15,10 @@ Five PDF reports, one per thread of work on the process-reward-model (PRM) track
 Needs `pandoc` and WeasyPrint (`pip install weasyprint`). The stylesheet asks for the Hiragino Sans and Monaco fonts (macOS); other systems fall back to a generic sans-serif.
 
 ```
-python build.py            # regenerates figs/ and all five PDFs
+python build.py            # regenerates figs/, data/fig_*.csv and all five PDFs
 python build.py 03_training_on_real_negatives.md   # one report
 ```
+
+The data behind every chart and table is in `data/` (see `data/README.md`); `tools/analysis.py` recomputes the AUROCs and bootstrap ranges from the per-chain scores.
 
 Numbers come from local, untracked result files under `training/reasoning/data/` and from the run logs; see each report's Code Structure section.

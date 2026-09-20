@@ -1,0 +1,5 @@
+instance_id,location,price_usd_per_hour,driver,used_for
+51468149,"Oregon, US",0.469,580.159,PRM check on base samples; SFT run 1; PRM check on SFT samples; first n=100 evals
+51482907,"Illinois, US",0.367,580.95,SFT run 2; real-negative data v1; first PRM arms incl. failed full-training arms
+51496010,"Utah, US",0.456,595.71,"v2 pipeline: SFT, 30,296 rollouts, six PRMs and scoring"
+51524225,"Pennsylvania, US",0.481,615.71,SFT re-baseline at n=300

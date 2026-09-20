@@ -105,40 +105,113 @@ def vbars2(path, cats, s1, s2, names, ymax, width=760, height=270):
     Path(path).write_text(svg(width, height, "".join(b)))
 
 
-def costbars(path):
-    phases = [("PRM check (base + SFT samples)", 0.19), ("SFT + first baseline evals", 0.27),
-              ("Real-negative PRM, v1", 0.44), ("Real-negative PRM, v2 (8 rollouts)", 1.19),
-              ("SFT re-baseline at n=300", 0.33)]
-    hbars(path, [("Approximate credit spent per phase (USD)", [(p.replace("\n", " "), v, i == 3) for i, (p, v) in enumerate(phases)])],
-          0.0, 1.4, [0.0, 0.25, 0.5, 0.75, 1.0, 1.25], "USD (from account-credit readings, so includes idle time)", label_w=290, fmt=lambda v: f"${v:.2f}")
+# ---------------------------------------------------------------------------------------------
+# Figure data. Each block feeds both the SVG figure and a CSV in data/ (single source of truth).
+# ---------------------------------------------------------------------------------------------
+# AUROC per PRM variant on the 596 scorable SFT-model chains. Ranges: 95% from resampling questions
+# (see tools/analysis.py; v2 rows use 400 resamples seed 1, v1 rows 300 resamples seed 0).
+AUROC_ARMS = [  # arm, detail, auroc, ci_low, ci_high, headline
+    ("Synthetic negatives only", "3-seed mean", 0.693, 0.641, 0.748, False),
+    ("+ real negatives, 4 rollouts", "1 seed, 600 wrong chains", 0.764, 0.707, 0.816, False),
+    ("+ real negatives, 8 rollouts", "3-seed mean, 900 wrong chains", 0.800, 0.751, 0.843, True),
+]
+LENGTH_ONLY = (0.733, 0.676, 0.789)  # auroc, ci_low, ci_high
+
+VALIDATION = [  # policy, score, auroc, highlight (base rows: CPU fp32 rescoring; see data/README.md)
+    ("Base model samples (markdown output, fallback step splitter)", "PRM, weakest-step score", 0.720, False),
+    ("Base model samples (markdown output, fallback step splitter)", "PRM, mean step score", 0.703, False),
+    ("Base model samples (markdown output, fallback step splitter)", "Length-only baseline", 0.766, False),
+    ("SFT model samples (matches the PRM's training format)", "PRM, weakest-step score", 0.699, True),
+    ("SFT model samples (matches the PRM's training format)", "PRM, mean step score", 0.680, True),
+    ("SFT model samples (matches the PRM's training format)", "PRM, weakest-step, equal step count", 0.686, True),
+    ("SFT model samples (matches the PRM's training format)", "Length-only baseline", 0.733, False),
+]
+
+LABEL_HIST_CATS = ["0", "1", "2", "3", "4", "5+"]
+LABEL_COUNTS_4 = [248, 153, 93, 48, 31, 27]   # 600 labelled wrong chains, 4 rollouts per prefix
+LABEL_COUNTS_8 = [251, 248, 153, 118, 64, 66]  # 900 labelled wrong chains, 8 rollouts per prefix
+
+BASELINES = [  # test, run, n, accuracy, ci_low, ci_high, avg_tokens, avg_tokens_correct, highlight
+    ("GSM8K", "Earlier SFT run", 100, 0.82, 0.745, 0.895, None, None, False),
+    ("GSM8K", "Retrained SFT", 100, 0.76, 0.676, 0.844, 104.9, 96.7, False),
+    ("GSM8K", "Retrained SFT", 300, 0.797, 0.751, 0.842, 104.9, 100.3, True),
+    ("MATH-500 strict", "Retrained SFT", 100, 0.38, 0.285, 0.475, 241.1, 171.9, False),
+    ("MATH-500 strict", "Retrained SFT", 300, 0.350, 0.296, 0.404, 259.8, 179.0, True),
+]
+
+EARLIER_RESULTS = [  # verified against training/reasoning/data/eval_*_r2.json (n=100 each)
+    ("Base", 0.77, 0.39), ("SFT", 0.82, 0.39), ("GRPO, exact-match reward", 0.79, 0.38),
+]
+
+COST_PHASES = [  # phase, credit_before, credit_after
+    ("PRM check (base + SFT samples)", 25.95, 25.76),
+    ("SFT + first baseline evals", 25.76, 25.49),
+    ("Real-negative PRM, v1", 25.49, 25.05),
+    ("Real-negative PRM, v2 (8 rollouts)", 25.05, 23.86),
+    ("SFT re-baseline at n=300", 23.86, 23.53),
+]
+
+MACHINES = [  # id, location, price_per_hour_usd, driver, used_for
+    (51468149, "Oregon, US", 0.469, "580.159", "PRM check on base samples; SFT run 1; PRM check on SFT samples; first n=100 evals"),
+    (51482907, "Illinois, US", 0.367, "580.95", "SFT run 2; real-negative data v1; first PRM arms incl. failed full-training arms"),
+    (51496010, "Utah, US", 0.456, "595.71", "v2 pipeline: SFT, 30,296 rollouts, six PRMs and scoring"),
+    (51524225, "Pennsylvania, US", 0.481, "615.71", "SFT re-baseline at n=300"),
+]
+
+
+def write_csv(path, header, rows):
+    import csv
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(header)
+        w.writerows(rows)
 
 
 def make_figures():
     f = HERE / "figs"
+    d = HERE / "data"
     f.mkdir(exist_ok=True)
-    dotplot(f / "auroc_arms.svg",
-            [("Synthetic negatives only", "3-seed mean", 0.693, 0.641, 0.748, False),
-             ("+ real negatives, 4 rollouts", "1 seed, 600 wrong chains", 0.764, 0.707, 0.816, False),
-             ("+ real negatives, 8 rollouts", "3-seed mean, 900 wrong chains", 0.800, 0.751, 0.843, True)],
-            0.55, 0.90, [0.6, 0.7, 0.8, 0.9], band=(0.733, 0.675, 0.788, "length-only baseline 0.733"),
+    d.mkdir(exist_ok=True)
+    # Figure: AUROC by PRM variant
+    dotplot(f / "auroc_arms.svg", AUROC_ARMS, 0.55, 0.90, [0.6, 0.7, 0.8, 0.9],
+            band=(LENGTH_ONLY[0], LENGTH_ONLY[1], LENGTH_ONLY[2], f"length-only baseline {LENGTH_ONLY[0]:.3f}"),
             xlabel="AUROC on 596 SFT-model chains (0.5 = chance); bars are 95% ranges from resampling questions")
-    hbars(f / "validation.svg",
-          [("Base model samples (markdown output, fallback step splitter)", [("PRM, weakest-step score", 0.719, False), ("PRM, mean step score", 0.704, False), ("Length-only baseline", 0.766, False)]),
-           ("SFT model samples (matches the PRM's training format)", [("PRM, weakest-step score", 0.699, True), ("PRM, mean step score", 0.680, True),
-                                                                        ("PRM, weakest-step, equal step count", 0.686, True), ("Length-only baseline", 0.733, False)])],
-          0.5, 0.8, [0.5, 0.6, 0.7, 0.8], "AUROC (0.5 = chance, 1.0 = perfect); bars start at chance")
-    vbars2(f / "label_hist.svg", ["0", "1", "2", "3", "4", "5+"],
-           [41.3, 25.5, 15.5, 8.0, 5.2, 4.5], [27.9, 27.6, 17.0, 13.1, 7.1, 7.3],
+    write_csv(d / "fig_auroc_arms.csv", ["variant", "detail", "auroc", "range_low", "range_high", "headline"],
+              [(a, b, v, lo, hi, int(h)) for a, b, v, lo, hi, h in AUROC_ARMS]
+              + [("Length-only baseline", "shorter answer = right", *LENGTH_ONLY, 0)])
+    # Figure: validation on real errors
+    groups = {}
+    for pol, score, v, hl in VALIDATION:
+        groups.setdefault(pol, []).append((score, v, hl))
+    hbars(f / "validation.svg", list(groups.items()), 0.5, 0.8, [0.5, 0.6, 0.7, 0.8],
+          "AUROC (0.5 = chance, 1.0 = perfect); bars start at chance")
+    write_csv(d / "fig_validation.csv", ["policy_samples", "score", "auroc"], [(p, s, v) for p, s, v, _ in VALIDATION])
+    # Figure: first-bad-step histogram
+    pct = lambda counts: [100.0 * c / sum(counts) for c in counts]
+    vbars2(f / "label_hist.svg", LABEL_HIST_CATS, pct(LABEL_COUNTS_4), pct(LABEL_COUNTS_8),
            ["4 rollouts per prefix (600 wrong chains)", "8 rollouts per prefix (900 wrong chains)"], 45)
+    write_csv(d / "fig_label_hist.csv",
+              ["first_bad_step", "count_4_rollouts", "pct_4_rollouts", "count_8_rollouts", "pct_8_rollouts"],
+              [(c, a, round(pa, 2), b, round(pb, 2)) for c, a, pa, b, pb in
+               zip(LABEL_HIST_CATS, LABEL_COUNTS_4, pct(LABEL_COUNTS_4), LABEL_COUNTS_8, pct(LABEL_COUNTS_8))])
+    # Figure: SFT baselines
     dotplot(f / "baselines.svg",
-            [("GSM8K, earlier SFT run", "n=100", 0.82, 0.745, 0.895, False),
-             ("GSM8K, retrained SFT", "n=100", 0.76, 0.676, 0.844, False),
-             ("GSM8K, retrained SFT", "n=300", 0.797, 0.751, 0.842, True),
-             ("MATH-500 strict, retrained SFT", "n=100", 0.38, 0.285, 0.475, False),
-             ("MATH-500 strict, retrained SFT", "n=300", 0.350, 0.296, 0.404, True)],
+            [(f"{t}, {r[0].lower() + r[1:]}", f"n={n}", a, lo, hi, hl) for t, r, n, a, lo, hi, _, _, hl in BASELINES],
             0.25, 0.95, [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
             xlabel="Accuracy with 95% range (normal approximation on the number of questions)", row_h=46, right_pad=190)
-    costbars(f / "cost.svg")
+    write_csv(d / "fig_baselines.csv",
+              ["test", "run", "n", "accuracy", "range_low", "range_high", "range_method", "avg_output_tokens", "avg_output_tokens_correct"],
+              [(t, r, n, a, lo, hi, "normal approximation", "" if tok is None else tok, "" if tc is None else tc)
+               for t, r, n, a, lo, hi, tok, tc, _ in BASELINES])
+    write_csv(d / "table_earlier_results_n100.csv", ["model", "gsm8k_accuracy", "math500_strict_accuracy"], EARLIER_RESULTS)
+    # Figure: cost by phase
+    costs = [(p, round(b - a, 2), i == 3) for i, (p, b, a) in enumerate(COST_PHASES)]
+    hbars(f / "cost.svg", [("Approximate credit spent per phase (USD)", costs)], 0.0, 1.4,
+          [0.0, 0.25, 0.5, 0.75, 1.0, 1.25], "USD (from account-credit readings, so includes idle time)",
+          label_w=290, fmt=lambda v: f"${v:.2f}")
+    write_csv(d / "fig_cost.csv", ["phase", "credit_before_usd", "credit_after_usd", "approx_cost_usd"],
+              [(p, b, a, round(b - a, 2)) for p, b, a in COST_PHASES])
+    write_csv(d / "table_machines.csv", ["instance_id", "location", "price_usd_per_hour", "driver", "used_for"], MACHINES)
 
 
 GLOSSARY = {
