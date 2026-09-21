@@ -1,6 +1,6 @@
 # PRM track reports
 
-Nine PDF reports (a tenth in progress), one per thread of work on the process-reward-model (PRM) track, with their markdown sources.
+Ten PDF reports, one per thread of work on the process-reward-model (PRM) track, with their markdown sources.
 
 | Report | Thread |
 |---|---|
@@ -13,7 +13,7 @@ Nine PDF reports (a tenth in progress), one per thread of work on the process-re
 | `07_length_reward_ablation.pdf` | Follow-up: isolating the pipeline's pre-existing length-shaping reward from the PRM's own effect, plus a seed-replication check |
 | `08_ida_round_one.pdf` | One round of self-distillation (IDA): does teaching the model with its own best checkpoint help? (No.) |
 | `09_bigger_prm.pdf` | A materially stronger PRM (bigger backbone, more/better-labeled data): does a sharper reward change the GRPO outcome? (No.) |
-| `10_math_domain.pdf` (in progress) | Same pipeline on competition MATH instead of GSM8K, where the outcome-reward signal is much sparser |
+| `10_math_domain.pdf` | Same pipeline on competition MATH instead of GSM8K: a 12% SFT-distillation yield left every model unable to produce the tagged answer format, so all three score 0.0 on MATH-500 — a data-sufficiency finding, not a test of process rewards on a harder domain |
 
 Reports 8, 9 and 10 ran concurrently on three separate rented GPUs, each reusing the pinned SFT model and/or PRM from reports 6/7 (pulled from Hugging Face) rather than retraining them, to keep the combined session's cost down.
 

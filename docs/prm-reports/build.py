@@ -432,12 +432,33 @@ def make_figures_thread_b():
             row_h=46, right_pad=210, label_w=260)
 
 
+def make_figures_thread_c():
+    """Report 10 figures: the MATH-domain pilot, on GSM8K (its only non-zero benchmark)."""
+    f = HERE / "figs"
+    pc = load_csv("grpo_paired_comparisons.csv")
+    order = ["MATH-domain SFT (49 traces)", "MATH-domain GRPO outcome", "MATH-domain GRPO prm"]
+    short = {"MATH-domain SFT (49 traces)": "SFT", "MATH-domain GRPO outcome": "GRPO outcome",
+             "MATH-domain GRPO prm": "GRPO prm"}
+
+    wanted = [(order[0], order[1]), (order[0], order[2]), (order[1], order[2])]
+    rows = []
+    for a, b in wanted:
+        r = next(x for x in pc if x["dataset"] == "GSM8K (cross-domain transfer)" and x["model_a"] == a and x["model_b"] == b)
+        rows.append((f"{short[b]} vs {short[a]}", f"n={r['n']}", float(r["acc_diff_b_minus_a"]), float(r["acc_diff_ci_low"]),
+                     float(r["acc_diff_ci_high"]), b == order[1] and a == order[0]))
+    dotplot(f / "mathdomain_gsm8k.svg", rows, -0.03, 0.03, [-0.02, -0.01, 0, 0.01, 0.02],
+            band=(0, 0, 0, "no difference"),
+            xlabel="GSM8K accuracy difference (95% range from resampling questions); only comparison excluding zero is outcome vs SFT",
+            row_h=46, right_pad=210, label_w=210)
+
+
 if __name__ == "__main__":
     make_figures()
     make_figures_grpo()
     make_figures_grpo2()
     make_figures_thread_a()
     make_figures_thread_b()
-    targets = [HERE / a for a in sys.argv[1:]] or sorted(HERE.glob("0[1-9]_*.md"))
+    make_figures_thread_c()
+    targets = [HERE / a for a in sys.argv[1:]] or sorted(HERE.glob("[01][0-9]_*.md"))
     for md in targets:
         print("built", build(md))

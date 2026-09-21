@@ -17,3 +17,9 @@ IDA round 1 (self-distilled),GSM8K,1319,0.7998,119.9,109.9
 IDA round 1 (self-distilled),MATH-500 strict,500,0.376,299.7,202.0
 "GRPO prm (1.5B PRM), no length_reward",GSM8K,1319,0.7892,109.6,101.4
 "GRPO prm (1.5B PRM), no length_reward",MATH-500 strict,500,0.37,265.2,179.6
+MATH-domain SFT (49 traces),GSM8K,1319,0.787,291.9,280.4
+MATH-domain SFT (49 traces),MATH-500 strict,500,0.0,421.8,
+MATH-domain GRPO outcome,GSM8K,1319,0.7998,291.6,280.7
+MATH-domain GRPO outcome,MATH-500 strict,500,0.0,417.9,
+MATH-domain GRPO prm,GSM8K,1319,0.7915,292.0,280.0
+MATH-domain GRPO prm,MATH-500 strict,500,0.0,419.1,
