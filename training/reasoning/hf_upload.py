@@ -38,9 +38,11 @@ def main():
             continue
         repo = f"{user}/{name}"
         api.create_repo(repo, private=not args.public, exist_ok=True)
+        # Always overwrite: trainer-generated cards (SFTTrainer/GRPOTrainer) can set a `base_model:`
+        # metadata field to a local checkout path, which the Hub rejects as invalid YAML.
         (Path(path) / "README.md").write_text(
             f"---\nlicense: apache-2.0\n---\n# {name}\n\n{blurb}\n\nPart of the PRM-track experiments in "
-            f"github.com/tsushanth/crowd-finetune (branch reasoning/prm, docs/prm-reports).\n") if not (Path(path) / "README.md").exists() else None
+            f"github.com/tsushanth/crowd-finetune (branch reasoning/prm, docs/prm-reports).\n")
         api.upload_folder(folder_path=str(path), repo_id=repo, ignore_patterns=["optimizer.pt", "*.pyc", "rng_state*", "scheduler.pt", "checkpoint-*/**", "checkpoint-*"])
         print("uploaded", repo, "(private)" if not args.public else "(public)")
 
