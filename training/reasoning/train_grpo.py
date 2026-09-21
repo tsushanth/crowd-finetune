@@ -35,6 +35,8 @@ def main():
                         help="JSONL with question/answer columns (see make_grpo_pool.py); replaces --dataset")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cpu", action="store_true", help="force CPU (local smoke tests)")
+    parser.add_argument("--no-length-reward", action="store_true",
+                        help="drop length_reward (target ~400 chars) to isolate the PRM/exact-match reward's own effect on output length")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -93,12 +95,12 @@ def main():
         target_modules="all-linear",
     )
 
-    reward_funcs = [rewards.format_reward, rewards.length_reward]
+    reward_funcs = [rewards.format_reward] if args.no_length_reward else [rewards.format_reward, rewards.length_reward]
     if args.reward in ("outcome", "prm+outcome"):
         reward_funcs.insert(0, rewards.exact_match_reward)
     if args.reward in ("prm", "prm+outcome"):
         reward_funcs.insert(0, rewards.make_prm_reward(resolve(args.prm), args.prm_aggregate))
-    print(f"reward mode: {args.reward} -> {[f.__name__ for f in reward_funcs]}")
+    print(f"reward mode: {args.reward} -> {[f.__name__ for f in reward_funcs]} (length_reward {'dropped' if args.no_length_reward else 'included'})")
 
     trainer = GRPOTrainer(
         model=base_model,
