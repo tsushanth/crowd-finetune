@@ -48,7 +48,7 @@ def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     seen = {r["question"] for r in P.dedupe_rows([root / p for p in args.exclude if (root / p).exists()])}
     if args.local_file:
-        ds = load_dataset("json", data_files=args.local_file, split="train")
+        ds = load_dataset("json", data_files=str(root / args.local_file if (root / args.local_file).exists() else args.local_file), split="train")
     else:
         ds = load_dataset("openai/gsm8k", "main", split="train")
     pool = [ex for ex in ds if ex["question"] not in seen][: args.questions]

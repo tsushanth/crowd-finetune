@@ -29,7 +29,8 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
 
     if args.local_file:
-        ds = load_dataset("json", data_files=args.local_file, split="train")
+        local_p = Path(__file__).resolve().parent / args.local_file
+        ds = load_dataset("json", data_files=str(local_p if local_p.exists() else args.local_file), split="train")
         n = min(args.limit, len(ds))
         examples = list(ds.select(range(n)))
     else:
