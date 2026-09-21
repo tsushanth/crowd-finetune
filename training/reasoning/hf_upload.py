@@ -41,7 +41,7 @@ def main():
         (Path(path) / "README.md").write_text(
             f"---\nlicense: apache-2.0\n---\n# {name}\n\n{blurb}\n\nPart of the PRM-track experiments in "
             f"github.com/tsushanth/crowd-finetune (branch reasoning/prm, docs/prm-reports).\n") if not (Path(path) / "README.md").exists() else None
-        api.upload_folder(folder_path=str(path), repo_id=repo, ignore_patterns=["optimizer.pt", "*.pyc", "rng_state*", "scheduler.pt"])
+        api.upload_folder(folder_path=str(path), repo_id=repo, ignore_patterns=["optimizer.pt", "*.pyc", "rng_state*", "scheduler.pt", "checkpoint-*/**", "checkpoint-*"])
         print("uploaded", repo, "(private)" if not args.public else "(public)")
 
 
