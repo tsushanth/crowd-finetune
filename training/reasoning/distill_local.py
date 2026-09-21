@@ -27,10 +27,11 @@ def main():
 
     root = Path(__file__).resolve().parent
     pool = [json.loads(l) for l in (root / args.pool).read_text().splitlines() if l.strip()]
+    teacher = str(root / args.teacher) if (root / args.teacher).exists() else args.teacher
 
-    tok = AutoTokenizer.from_pretrained(args.teacher, padding_side="left")
+    tok = AutoTokenizer.from_pretrained(teacher, padding_side="left")
     tok.pad_token = tok.pad_token or tok.eos_token
-    model = AutoModelForCausalLM.from_pretrained(args.teacher, torch_dtype=torch.bfloat16, device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(teacher, torch_dtype=torch.bfloat16, device_map="auto")
     model.eval()
 
     prompts = [
