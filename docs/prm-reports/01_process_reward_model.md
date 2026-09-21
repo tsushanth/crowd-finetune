@@ -22,7 +22,7 @@ date: September 2026
 - The reward hook is opt-in. With the default `--reward outcome`, the reward list is identical to the original.
 - Training took 1,116 seconds on a laptop CPU by training only the top 8 layers of the model.
 - NOTE: A 0.954 score on planted mistakes says little about real mistakes. Reports 2 and 3 show real-mistake performance is 0.70 to 0.80.
-- NOTE: No GRPO run with this reward has been made yet.
+- NOTE: A GRPO run with this reward has since happened (report 6). Result: no accuracy change beyond noise, and answers got longer rather than shorter in every arm, including the PRM ones — the shorter-chains hypothesis was not supported at this scale.
 
 ## Quick Stats
 

@@ -232,6 +232,7 @@ GLOSSARY = {
     "Outcome vs process reward": "An outcome reward marks only the final answer. A process reward marks every line of working.",
     "PRM (process reward model)": "A small model that reads a question and the working so far and outputs, after each step, the probability that the step is correct.",
     "Reward": "The score given to an attempt during reinforcement learning. The model drifts toward whatever the reward favours, including loopholes.",
+    "Control arm": "A run identical to the experiment except for the one thing being tested, so any difference between them can be blamed on that one change and not on everything else that also differs (data, seed, hardware).",
     "Seed": "The random starting point of a training run. Several seeds giving similar scores shows a result is not a fluke.",
     "SFT": "Supervised fine-tuning: showing the model worked examples (question, then written solution) so it learns to imitate them.",
     "Step": "One line or sentence of working. Solutions are split into steps automatically at line and sentence breaks.",
@@ -263,8 +264,66 @@ def build(md_path):
     return pdf
 
 
+def load_csv(name):
+    import csv
+    with open(HERE / "data" / name, newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def make_figures_grpo():
+    """Report 6 figures. Reads the already-published CSVs (grpo_*.csv) rather than
+    re-deriving numbers, so the charts cannot drift from the analysis scripts' output."""
+    import math
+
+    f = HERE / "figs"
+    ev = load_csv("grpo_eval_results.csv")
+    pc = load_csv("grpo_paired_comparisons.csv")
+    order = ["SFT (pinned)", "GRPO outcome", "GRPO prm+outcome", "GRPO prm"]
+
+    # Figure: accuracy by model, both datasets, one dotplot (mirrors fig_baselines' wide-axis trick)
+    rows = []
+    for ds in ("GSM8K", "MATH-500 strict"):
+        for m in order:
+            r = next(x for x in ev if x["model"] == m and x["dataset"] == ds)
+            n, acc = int(r["n"]), float(r["accuracy"])
+            ci = 1.96 * math.sqrt(acc * (1 - acc) / n)
+            rows.append((m, f"{ds}, n={n}", acc, max(0, acc - ci), min(1, acc + ci), m != "SFT (pinned)"))
+    dotplot(f / "grpo_accuracy.svg", rows, 0.25, 0.95, [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+            xlabel="Accuracy with 95% range (normal approximation on the number of questions)",
+            row_h=42, right_pad=170)
+
+    # Figure: average output tokens by model, grouped by dataset (headline: every arm lengthens vs SFT)
+    groups = []
+    for ds in ("GSM8K", "MATH-500 strict"):
+        bars = []
+        for m in order:
+            r = next(x for x in ev if x["model"] == m and x["dataset"] == ds)
+            bars.append((m, float(r["avg_output_tokens"]), m != "SFT (pinned)"))
+        groups.append((f"{ds} (n={ev[0]['n'] if ds=='GSM8K' else 500})".replace("500", "500")
+                       .replace(f"(n={ev[0]['n'] if ds=='GSM8K' else 500})",
+                                f"(n={next(x for x in ev if x['dataset']==ds)['n']})"), bars))
+    hbars(f / "grpo_tokens.svg", groups, 0, 300, [0, 50, 100, 150, 200, 250, 300],
+          "Average output tokens (all questions)", label_w=200, bar_h=20, gap=8, gap_g=24)
+
+    # Figure: paired token differences (all questions) for the 5 comparisons, GSM8K (n=1319)
+    short = {"SFT (pinned)": "SFT", "GRPO outcome": "outcome", "GRPO prm+outcome": "prm+outcome", "GRPO prm": "prm"}
+    diff_rows = []
+    for r in pc:
+        if r["dataset"] != "GSM8K":
+            continue
+        lab = f"{short[r['model_b']]} vs {short[r['model_a']]}"
+        hl = r["model_a"] == "GRPO outcome"  # the PRM-vs-outcome-control comparisons are the real test
+        diff_rows.append((lab, f"n={r['n']}", float(r["tok_diff_b_minus_a"]), float(r["tok_diff_ci_low"]),
+                           float(r["tok_diff_ci_high"]), hl))
+    dotplot(f / "grpo_token_diffs.svg", diff_rows, -6, 12, [-5, 0, 5, 10],
+            band=(0, 0, 0, "no difference"),
+            xlabel="Output tokens, model B minus model A, all questions (95% range from resampling questions)",
+            row_h=42, right_pad=170)
+
+
 if __name__ == "__main__":
     make_figures()
-    targets = [HERE / a for a in sys.argv[1:]] or sorted(HERE.glob("0[1-5]_*.md"))
+    make_figures_grpo()
+    targets = [HERE / a for a in sys.argv[1:]] or sorted(HERE.glob("0[1-9]_*.md"))
     for md in targets:
         print("built", build(md))
