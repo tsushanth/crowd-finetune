@@ -307,10 +307,11 @@ def make_figures_grpo():
 
     # Figure: paired token differences (all questions) for the 5 comparisons, GSM8K (n=1319)
     short = {"SFT (pinned)": "SFT", "GRPO outcome": "outcome", "GRPO prm+outcome": "prm+outcome", "GRPO prm": "prm"}
+    wanted_pairs = [("SFT (pinned)", "GRPO outcome"), ("SFT (pinned)", "GRPO prm+outcome"), ("SFT (pinned)", "GRPO prm"),
+                    ("GRPO outcome", "GRPO prm+outcome"), ("GRPO outcome", "GRPO prm")]
     diff_rows = []
-    for r in pc:
-        if r["dataset"] != "GSM8K":
-            continue
+    for a, b in wanted_pairs:
+        r = next(x for x in pc if x["dataset"] == "GSM8K" and x["model_a"] == a and x["model_b"] == b)
         lab = f"{short[r['model_b']]} vs {short[r['model_a']]}"
         hl = r["model_a"] == "GRPO outcome"  # the PRM-vs-outcome-control comparisons are the real test
         diff_rows.append((lab, f"n={r['n']}", float(r["tok_diff_b_minus_a"]), float(r["tok_diff_ci_low"]),
@@ -321,9 +322,63 @@ def make_figures_grpo():
             row_h=42, right_pad=170)
 
 
+def make_figures_grpo2():
+    """Report 7 figures: the length_reward-isolation follow-up. Reads the same published
+    CSVs as make_figures_grpo(), which were regenerated to include the three new arms."""
+    f = HERE / "figs"
+    ev = load_csv("grpo_eval_results.csv")
+    pc = load_csv("grpo_paired_comparisons.csv")
+
+    def tok(model, ds):
+        return float(next(x for x in ev if x["model"] == model and x["dataset"] == ds)["avg_output_tokens"])
+
+    # Figure: tokens with vs without length_reward, SFT for reference
+    order = [
+        ("SFT (pinned)", False),
+        ("GRPO outcome", True), ("GRPO outcome, no length_reward", False),
+        ("GRPO prm", True), ("GRPO prm, no length_reward", False),
+    ]
+    groups = []
+    for ds in ("GSM8K", "MATH-500 strict"):
+        bars = [(m, tok(m, ds), hl) for m, hl in order]
+        groups.append((f"{ds} (n={next(x for x in ev if x['dataset']==ds)['n']})", bars))
+    hbars(f / "lr_ablation_tokens.svg", groups, 0, 300, [0, 50, 100, 150, 200, 250, 300],
+          "Average output tokens (all questions)", label_w=250, bar_h=20, gap=8, gap_g=24)
+
+    # Figure: paired token differences that isolate length_reward, GSM8K
+    short = {"SFT (pinned)": "SFT", "GRPO outcome": "outcome (+LR)",
+             "GRPO outcome, no length_reward": "outcome (no LR)", "GRPO prm": "prm (+LR)",
+             "GRPO prm, no length_reward": "prm (no LR)"}
+    wanted = [("GRPO outcome", "GRPO outcome, no length_reward"), ("GRPO prm", "GRPO prm, no length_reward"),
+              ("GRPO outcome, no length_reward", "GRPO prm, no length_reward")]
+    rows = []
+    for a, b in wanted:
+        r = next(x for x in pc if x["dataset"] == "GSM8K" and x["model_a"] == a and x["model_b"] == b)
+        rows.append((f"{short[b]} vs {short[a]}", f"n={r['n']}", float(r["tok_diff_b_minus_a"]),
+                     float(r["tok_diff_ci_low"]), float(r["tok_diff_ci_high"]), a.endswith("length_reward")))
+    dotplot(f / "lr_ablation_diffs.svg", rows, -10, 4, [-10, -5, 0],
+            band=(0, 0, 0, "no difference"),
+            xlabel="Output tokens, model B minus model A, GSM8K, all questions (95% range from resampling questions)",
+            row_h=44, right_pad=170, label_w=340)
+
+    # Figure: the one replicated effect, both-right tokens on MATH-500, two seeds
+    rows2 = []
+    for a, b, seed_lab in [("GRPO outcome", "GRPO prm+outcome", "seed 42 (report 6)"),
+                            ("GRPO outcome", "GRPO prm+outcome, seed 1", "seed 1 (report 7)")]:
+        r = next(x for x in pc if x["dataset"] == "MATH-500 strict" and x["model_a"] == a and x["model_b"] == b)
+        rows2.append((f"prm+outcome {seed_lab}", "vs outcome, both right",
+                      float(r["tok_both_diff_b_minus_a"]), float(r["tok_both_diff_ci_low"]),
+                      float(r["tok_both_diff_ci_high"]), "report 7" in seed_lab))
+    dotplot(f / "lr_ablation_replication.svg", rows2, -18, 2, [-15, -10, -5, 0],
+            band=(0, 0, 0, "no difference"),
+            xlabel="Output tokens, prm+outcome minus outcome, MATH-500, both-right subset (95% range)",
+            row_h=48, right_pad=170, label_w=260)
+
+
 if __name__ == "__main__":
     make_figures()
     make_figures_grpo()
+    make_figures_grpo2()
     targets = [HERE / a for a in sys.argv[1:]] or sorted(HERE.glob("0[1-9]_*.md"))
     for md in targets:
         print("built", build(md))

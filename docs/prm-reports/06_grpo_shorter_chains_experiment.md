@@ -191,7 +191,7 @@ This session ran on one rented RTX 4090 (Vietnam and Korea hosts; the first four
 
 ## Discontinued Ideas
 
-**A fourth arm without the length reward.** Isolating the PRM's effect on length cleanly needs an arm that drops `length_reward` (or `prm`-only against an `outcome`-only control that also drops it). Not run here — it would have doubled the session's GRPO cost, and the budget for this session was fixed in advance. Worth doing before drawing a final conclusion about the PRM's own effect on length.
+**A fourth arm without the length reward.** Not run in this session — it would have doubled the GRPO cost, and the budget was fixed in advance. Done as a follow-up (report 7): dropping `length_reward` brings both the outcome-only and PRM arms back to within noise of the SFT baseline's length, confirming `length_reward` as the dominant cause of the lengthening reported here, and confirming that the PRM reward has no shortening effect once that confound is removed.
 
 **Sampled (temperature > 0) evaluation.** Greedy decoding was used throughout for comparability with reports 1–4. GRPO training itself explores with 8 sampled generations per prompt; whether the length effect looks different under sampled eval was not checked.
 

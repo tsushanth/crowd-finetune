@@ -1,6 +1,6 @@
 # Data behind the figures and tables
 
-Reports 1–5's figure CSVs are written by `python build.py` from constants at the top of that script, alongside the matching SVGs, so the two cannot drift apart. The `per_chain_*`, `prm_results_by_model.csv` and `prm_bootstrap_ranges.csv` files come from the scripts in `tools/`. Report 6's `grpo_*.csv` files come from `training/reasoning/paired_compare.py` against the pulled eval/diagnostic JSON (not from `build.py`); `build.py`'s report-6 figures then read those CSVs directly, rather than re-typing the numbers as constants — see `make_figures_grpo()`.
+Reports 1–5's figure CSVs are written by `python build.py` from constants at the top of that script, alongside the matching SVGs, so the two cannot drift apart. The `per_chain_*`, `prm_results_by_model.csv` and `prm_bootstrap_ranges.csv` files come from the scripts in `tools/`. The `grpo_*.csv` files come from `training/reasoning/paired_compare.py` against the pulled eval/diagnostic JSON (not from `build.py`); they were first written for report 6 (4 models) and extended in place for report 7's 3 additional arms, so both reports read the same three files rather than each having their own. `build.py`'s figures then read those CSVs directly, rather than re-typing the numbers as constants — see `make_figures_grpo()` (report 6) and `make_figures_grpo2()` (report 7).
 
 | File | What it holds | Used in |
 |---|---|---|
@@ -15,9 +15,9 @@ Reports 1–5's figure CSVs are written by `python build.py` from constants at t
 | `per_chain_base_fallback.csv` | Same for the base model's samples, scored with the fallback splitter | Report 2 |
 | `prm_results_by_model.csv` | AUROC (weakest step, mean step, equal step count) for every model, recomputed from the per-chain files | Reports 2 and 3 |
 | `prm_bootstrap_ranges.csv` | Bootstrap ranges (resampling questions) for the headline comparisons | Report 3 |
-| `grpo_eval_results.csv` | Accuracy and average output tokens (all questions and correct-only), 4 models × 2 benchmarks, full test sets | Report 6 |
-| `grpo_paired_comparisons.csv` | McNemar p-values and bootstrap ranges for accuracy and token differences, all 10 model pairs × 2 benchmarks | Report 6 |
-| `grpo_gaming_diagnostics.csv` | Step counts and PRM scores on each model's own GSM8K eval outputs (reward-gaming check) | Report 6 |
+| `grpo_eval_results.csv` | Accuracy and average output tokens (all questions and correct-only), 7 models × 2 benchmarks, full test sets | Reports 6, 7 |
+| `grpo_paired_comparisons.csv` | McNemar p-values and bootstrap ranges for accuracy and token differences, 12 model pairs × 2 benchmarks | Reports 6, 7 |
+| `grpo_gaming_diagnostics.csv` | Step counts and PRM scores on each model's own GSM8K eval outputs (reward-gaming check), 7 models | Reports 6, 7 |
 | `prm_validation_pinned_sft.csv` | PRM validation (report 2's method) re-run on report 6's pinned SFT model | Report 6 |
 
 ## Notes for reuse

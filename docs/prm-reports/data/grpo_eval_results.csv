@@ -7,3 +7,9 @@ GRPO prm+outcome,GSM8K,1319,0.7983,113.7,105.1
 GRPO prm+outcome,MATH-500 strict,500,0.374,273.5,191.5
 GRPO prm,GSM8K,1319,0.7998,117.4,108.1
 GRPO prm,MATH-500 strict,500,0.378,286.0,200.1
+"GRPO outcome, no length_reward",GSM8K,1319,0.7923,108.1,100.5
+"GRPO outcome, no length_reward",MATH-500 strict,500,0.37,258.8,177.6
+"GRPO prm, no length_reward",GSM8K,1319,0.7824,110.0,100.9
+"GRPO prm, no length_reward",MATH-500 strict,500,0.372,261.5,182.7
+"GRPO prm+outcome, seed 1",GSM8K,1319,0.7938,113.9,106.2
+"GRPO prm+outcome, seed 1",MATH-500 strict,500,0.366,276.0,189.6
