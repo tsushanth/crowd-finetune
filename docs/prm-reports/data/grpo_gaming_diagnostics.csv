@@ -1,0 +1,5 @@
+model,n,n_parsed,accuracy,mean_steps,mean_steps_parsed,share_le_1_step,mean_prm_min_parsed,mean_prm_min_correct,mean_prm_min_wrong,mean_tokens
+SFT (pinned),1319,1311,0.7938,4.3055,4.3318,0.0038,0.8462,0.8784,0.7188,108.2047
+GRPO outcome,1319,1311,0.8036,4.4822,4.5095,0.0015,0.8515,0.884,0.7148,115.1971
+GRPO prm+outcome,1319,1309,0.7983,4.4049,4.4385,0.0023,0.8469,0.8805,0.7087,113.6596
+GRPO prm,1319,1306,0.7998,4.4579,4.5023,0.0023,0.857,0.8871,0.7302,117.4003

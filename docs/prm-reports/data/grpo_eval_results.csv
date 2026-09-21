@@ -1,0 +1,9 @@
+model,dataset,n,accuracy,avg_output_tokens,avg_output_tokens_correct
+SFT (pinned),GSM8K,1319,0.7938,108.2,99.8
+SFT (pinned),MATH-500 strict,500,0.38,262.8,184.3
+GRPO outcome,GSM8K,1319,0.8036,115.2,107.8
+GRPO outcome,MATH-500 strict,500,0.382,279.5,203.2
+GRPO prm+outcome,GSM8K,1319,0.7983,113.7,105.1
+GRPO prm+outcome,MATH-500 strict,500,0.374,273.5,191.5
+GRPO prm,GSM8K,1319,0.7998,117.4,108.1
+GRPO prm,MATH-500 strict,500,0.378,286.0,200.1
