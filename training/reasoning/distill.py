@@ -12,6 +12,7 @@ from .teacher import Teacher
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="openai/gsm8k")
+    parser.add_argument("--local-file", default=None, help="jsonl with question/answer columns; bypasses --dataset/--config-name/--split/--skip")
     parser.add_argument("--config-name", default="main")
     parser.add_argument("--split", default="train")
     parser.add_argument("--limit", type=int, default=200)
@@ -27,9 +28,14 @@ def main():
     out = Path(__file__).resolve().parent / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    ds = load_dataset(args.dataset, args.config_name, split=args.split)
-    n = min(args.limit, len(ds) - args.skip)
-    examples = list(ds.select(range(args.skip, args.skip + n)))
+    if args.local_file:
+        ds = load_dataset("json", data_files=args.local_file, split="train")
+        n = min(args.limit, len(ds))
+        examples = list(ds.select(range(n)))
+    else:
+        ds = load_dataset(args.dataset, args.config_name, split=args.split)
+        n = min(args.limit, len(ds) - args.skip)
+        examples = list(ds.select(range(args.skip, args.skip + n)))
 
     def work(example):
         reference = formats.extract_last_number(example["answer"])

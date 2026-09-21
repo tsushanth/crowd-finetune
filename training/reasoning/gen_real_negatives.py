@@ -30,6 +30,7 @@ def gen(pol, tok, prompts, n_new, temp, batch, dev):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--policy", required=True)
+    ap.add_argument("--local-file", default=None, help="jsonl with question/answer columns; bypasses the GSM8K train pull")
     ap.add_argument("--exclude", nargs="+", default=[
         "data/reasoning_sft.jsonl", "data/reasoning_sft_more.jsonl",
         "data/reasoning_sft_more2.jsonl", "data/reasoning_sft_more3.jsonl"])
@@ -46,7 +47,10 @@ def main():
     root = Path(__file__).resolve().parent
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     seen = {r["question"] for r in P.dedupe_rows([root / p for p in args.exclude if (root / p).exists()])}
-    ds = load_dataset("openai/gsm8k", "main", split="train")
+    if args.local_file:
+        ds = load_dataset("json", data_files=args.local_file, split="train")
+    else:
+        ds = load_dataset("openai/gsm8k", "main", split="train")
     pool = [ex for ex in ds if ex["question"] not in seen][: args.questions]
     print(f"{len(seen)} excluded questions; using {len(pool)} fresh train questions", flush=True)
 
