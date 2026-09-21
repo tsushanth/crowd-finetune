@@ -375,10 +375,69 @@ def make_figures_grpo2():
             row_h=48, right_pad=170, label_w=260)
 
 
+def make_figures_thread_a():
+    """Report 8 figures: IDA round 1 vs round 0."""
+    f = HERE / "figs"
+    ev = load_csv("grpo_eval_results.csv")
+    pc = load_csv("grpo_paired_comparisons.csv")
+    order = ["SFT (pinned)", "GRPO outcome", "IDA round 1 (self-distilled)"]
+
+    groups = []
+    for ds in ("GSM8K", "MATH-500 strict"):
+        bars = [(m.replace("GRPO outcome", "round 0 (GRPO outcome)"), float(next(x for x in ev if x["model"] == m and x["dataset"] == ds)["avg_output_tokens"]), m != "SFT (pinned)") for m in order]
+        groups.append((f"{ds} (n={next(x for x in ev if x['dataset']==ds)['n']})", bars))
+    hbars(f / "ida_tokens.svg", groups, 0, 320, [0, 50, 100, 150, 200, 250, 300],
+          "Average output tokens (all questions)", label_w=230, bar_h=20, gap=8, gap_g=24)
+
+    rows = []
+    for ds, dslabel in (("GSM8K", "GSM8K"), ("MATH-500 strict", "MATH-500")):
+        r = next(x for x in pc if x["dataset"] == ds and x["model_a"] == "GRPO outcome" and x["model_b"] == "IDA round 1 (self-distilled)")
+        rows.append((f"round 1 vs round 0, {dslabel}", f"n={r['n']}", float(r["tok_diff_b_minus_a"]), float(r["tok_diff_ci_low"]),
+                     float(r["tok_diff_ci_high"]), dslabel == "MATH-500"))
+    dotplot(f / "ida_diffs.svg", rows, -5, 30, [0, 10, 20, 30],
+            band=(0, 0, 0, "no difference"),
+            xlabel="Output tokens, round 1 minus round 0, all questions (95% range from resampling questions)",
+            row_h=48, right_pad=170, label_w=230)
+
+
+def make_figures_thread_b():
+    """Report 9 figures: a bigger, better-trained PRM."""
+    f = HERE / "figs"
+    ev = load_csv("grpo_eval_results.csv")
+    pc = load_csv("grpo_paired_comparisons.csv")
+    order = ["GRPO outcome, no length_reward", "GRPO prm, no length_reward", "GRPO prm (1.5B PRM), no length_reward"]
+    short = {"GRPO outcome, no length_reward": "outcome", "GRPO prm, no length_reward": "prm (0.5B)",
+             "GRPO prm (1.5B PRM), no length_reward": "prm (1.5B)"}
+
+    groups = []
+    for ds in ("GSM8K", "MATH-500 strict"):
+        bars = [(short[m], float(next(x for x in ev if x["model"] == m and x["dataset"] == ds)["avg_output_tokens"]), m != order[0]) for m in order]
+        groups.append((f"{ds} (n={next(x for x in ev if x['dataset']==ds)['n']})", bars))
+    hbars(f / "bigprm_tokens.svg", groups, 0, 300, [0, 50, 100, 150, 200, 250, 300],
+          "Average output tokens (all questions)", label_w=160, bar_h=20, gap=8, gap_g=24)
+
+    wanted = [("GRPO outcome, no length_reward", "GRPO prm (1.5B PRM), no length_reward", "GSM8K"),
+              ("GRPO prm, no length_reward", "GRPO prm (1.5B PRM), no length_reward", "GSM8K"),
+              ("GRPO outcome, no length_reward", "GRPO prm (1.5B PRM), no length_reward", "MATH-500 strict"),
+              ("GRPO prm, no length_reward", "GRPO prm (1.5B PRM), no length_reward", "MATH-500 strict")]
+    rows = []
+    for a, b, ds in wanted:
+        r = next(x for x in pc if x["dataset"] == ds and x["model_a"] == a and x["model_b"] == b)
+        lab = f"1.5B vs {short[a]}, {ds.split(chr(32))[0]}"
+        rows.append((lab, f"n={r['n']}", float(r["tok_diff_b_minus_a"]), float(r["tok_diff_ci_low"]),
+                     float(r["tok_diff_ci_high"]), a == order[1]))
+    dotplot(f / "bigprm_diffs.svg", rows, -6, 16, [-5, 0, 5, 10, 15],
+            band=(0, 0, 0, "no difference"),
+            xlabel="Output tokens, 1.5B-PRM arm minus comparison, all questions (95% range)",
+            row_h=46, right_pad=210, label_w=260)
+
+
 if __name__ == "__main__":
     make_figures()
     make_figures_grpo()
     make_figures_grpo2()
+    make_figures_thread_a()
+    make_figures_thread_b()
     targets = [HERE / a for a in sys.argv[1:]] or sorted(HERE.glob("0[1-9]_*.md"))
     for md in targets:
         print("built", build(md))

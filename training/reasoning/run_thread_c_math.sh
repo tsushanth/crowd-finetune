@@ -10,8 +10,9 @@
 # and synced to this box; math_val_pool.jsonl is unused in this pass (scope cut -- see report).
 #
 # Run from the repo root on the GPU box. Progress in /root/progress.log; /root/fail on
-# error; /root/all_done at the end. Needs /root/.hftoken and /root/.openrouter (two lines:
-# BASE_LLM_API_KEY, BASE_LLM_URL).
+# error; /root/all_done at the end. Needs /root/.hftoken and /root/.openrouter (a labeled
+# shell-sourceable file: BASE_LLM_API_KEY=... and BASE_LLM_URL=... on their own lines --
+# labeled, not positional, since .env's own field order is not something to rely on).
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 R=training/reasoning
@@ -20,8 +21,7 @@ step() { echo "[$(date +%H:%M:%S)] $1" >> /root/progress.log; }
 fail() { echo "$1" > /root/fail; step "FAIL $1"; exit 1; }
 run()  { local log=$1; shift; "$@" >> "$log" 2>&1 || fail "$log"; }
 rm -f /root/fail /root/all_done; : > /root/progress.log
-export BASE_LLM_API_KEY=$(sed -n 1p /root/.openrouter)
-export BASE_LLM_URL=$(sed -n 2p /root/.openrouter)
+set -a; source /root/.openrouter; set +a
 
 step "distill MATH traces (external teacher, deepseek-v3.2, verified against reference)"
 run /root/distill.log python -m training.reasoning.distill --local-file data/math_distill_pool.jsonl \

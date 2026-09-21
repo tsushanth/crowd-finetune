@@ -13,3 +13,7 @@ GRPO prm,MATH-500 strict,500,0.378,286.0,200.1
 "GRPO prm, no length_reward",MATH-500 strict,500,0.372,261.5,182.7
 "GRPO prm+outcome, seed 1",GSM8K,1319,0.7938,113.9,106.2
 "GRPO prm+outcome, seed 1",MATH-500 strict,500,0.366,276.0,189.6
+IDA round 1 (self-distilled),GSM8K,1319,0.7998,119.9,109.9
+IDA round 1 (self-distilled),MATH-500 strict,500,0.376,299.7,202.0
+"GRPO prm (1.5B PRM), no length_reward",GSM8K,1319,0.7892,109.6,101.4
+"GRPO prm (1.5B PRM), no length_reward",MATH-500 strict,500,0.37,265.2,179.6

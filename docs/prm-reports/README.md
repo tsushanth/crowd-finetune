@@ -1,6 +1,6 @@
 # PRM track reports
 
-Seven PDF reports, one per thread of work on the process-reward-model (PRM) track, with their markdown sources.
+Nine PDF reports (a tenth in progress), one per thread of work on the process-reward-model (PRM) track, with their markdown sources.
 
 | Report | Thread |
 |---|---|
@@ -11,16 +11,21 @@ Seven PDF reports, one per thread of work on the process-reward-model (PRM) trac
 | `05_gpu_operations_and_cost.pdf` | Rented GPUs, cost, problems and fixes, repo setup |
 | `06_grpo_shorter_chains_experiment.pdf` | The GRPO experiment: does the PRM reward give shorter chains at equal accuracy? (No, at this scale.) |
 | `07_length_reward_ablation.pdf` | Follow-up: isolating the pipeline's pre-existing length-shaping reward from the PRM's own effect, plus a seed-replication check |
+| `08_ida_round_one.pdf` | One round of self-distillation (IDA): does teaching the model with its own best checkpoint help? (No.) |
+| `09_bigger_prm.pdf` | A materially stronger PRM (bigger backbone, more/better-labeled data): does a sharper reward change the GRPO outcome? (No.) |
+| `10_math_domain.pdf` (in progress) | Same pipeline on competition MATH instead of GSM8K, where the outcome-reward signal is much sparser |
+
+Reports 8, 9 and 10 ran concurrently on three separate rented GPUs, each reusing the pinned SFT model and/or PRM from reports 6/7 (pulled from Hugging Face) rather than retraining them, to keep the combined session's cost down.
 
 ## Rebuilding
 
 Needs `pandoc` and WeasyPrint (`pip install weasyprint`). The stylesheet asks for the Hiragino Sans and Monaco fonts (macOS); other systems fall back to a generic sans-serif.
 
 ```
-python build.py            # regenerates figs/, data/fig_*.csv and all seven PDFs
-python build.py 07_length_reward_ablation.md   # one report
+python build.py            # regenerates figs/, data/fig_*.csv and all PDFs
+python build.py 09_bigger_prm.md   # one report
 ```
 
-The data behind every chart and table is in `data/` (see `data/README.md`); `tools/analysis.py` recomputes the AUROCs and bootstrap ranges from the per-chain scores. Reports 6 and 7 share the same `data/grpo_*.csv` files (report 7 added rows for its three new arms rather than creating separate files); both reports' figures are drawn directly from those CSVs, so no numbers are re-typed into `build.py`.
+The data behind every chart and table is in `data/` (see `data/README.md`); `tools/analysis.py` recomputes the AUROCs and bootstrap ranges from the per-chain scores. Reports 6 through 9 share the same `data/grpo_*.csv` files — each new report added rows for its new arms rather than creating separate files — so every report's figures are drawn directly from those CSVs and no numbers are re-typed into `build.py`.
 
-Numbers come from local, untracked result files under `training/reasoning/data/` and from the run logs; see each report's Code Structure section. Report 6's trained weights (SFT adapter, both PRMs, all three GRPO adapters) are on Hugging Face as private model repos under `sushanth9/prm-track-*`. Report 7's three new adapters were not uploaded before their rental machine was deleted (see its Findings) — only the eval outputs and diagnostics survive for those three, not the checkpoints. All raw per-question data behind both sessions (evaluation completions, diagnostics, PRM validation) is backed up as a private Hugging Face dataset, `sushanth9/prm-track-raw-data`.
+Numbers come from local, untracked result files under `training/reasoning/data/` and from the run logs; see each report's Code Structure section. Report 6's trained weights (SFT adapter, both PRMs, all three GRPO adapters) are on Hugging Face as private model repos under `sushanth9/prm-track-*`. Reports 7, 8 and 9's new adapters were not uploaded before their rental machines were deleted — only the eval outputs and diagnostics survive for those, not the checkpoints. All raw per-question data behind every session (evaluation completions, diagnostics, PRM validation) is backed up as a private Hugging Face dataset, `sushanth9/prm-track-raw-data`.
