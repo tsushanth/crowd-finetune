@@ -1,6 +1,6 @@
 # PRM track reports
 
-Ten PDF reports, one per thread of work on the process-reward-model (PRM) track, with their markdown sources.
+Eleven PDF reports, one per thread of work on the process-reward-model (PRM) track, with their markdown sources.
 
 | Report | Thread |
 |---|---|
@@ -14,8 +14,9 @@ Ten PDF reports, one per thread of work on the process-reward-model (PRM) track,
 | `08_ida_round_one.pdf` | One round of self-distillation (IDA): does teaching the model with its own best checkpoint help? (No.) |
 | `09_bigger_prm.pdf` | A materially stronger PRM (bigger backbone, more/better-labeled data): does a sharper reward change the GRPO outcome? (No.) |
 | `10_math_domain.pdf` | Same pipeline on competition MATH instead of GSM8K: a 12% SFT-distillation yield left every model unable to produce the tagged answer format, so all three score 0.0 on MATH-500 — a data-sufficiency finding, not a test of process rewards on a harder domain |
+| `11_math_domain_retry.pdf` | Fixes the two bugs behind report 10's 0.0 result (a dead teacher-prompt branch; a fraction/LaTeX-blind answer matcher) and reruns the same pipeline: with real MATH-500 accuracy to compare, the PRM reward still doesn't beat outcome-only reward (No), closing out the domain-difficulty question |
 
-Reports 8, 9 and 10 ran concurrently on three separate rented GPUs, each reusing the pinned SFT model and/or PRM from reports 6/7 (pulled from Hugging Face) rather than retraining them, to keep the combined session's cost down.
+Reports 8, 9 and 10 ran concurrently on three separate rented GPUs, each reusing the pinned SFT model and/or PRM from reports 6/7 (pulled from Hugging Face) rather than retraining them, to keep the combined session's cost down. Report 11 is a sequential retry of report 10 on its own rented GPU, after report 10's bugs were found and fixed.
 
 ## Rebuilding
 
@@ -26,6 +27,6 @@ python build.py            # regenerates figs/, data/fig_*.csv and all PDFs
 python build.py 09_bigger_prm.md   # one report
 ```
 
-The data behind every chart and table is in `data/` (see `data/README.md`); `tools/analysis.py` recomputes the AUROCs and bootstrap ranges from the per-chain scores. Reports 6 through 9 share the same `data/grpo_*.csv` files — each new report added rows for its new arms rather than creating separate files — so every report's figures are drawn directly from those CSVs and no numbers are re-typed into `build.py`.
+The data behind every chart and table is in `data/` (see `data/README.md`); `tools/analysis.py` recomputes the AUROCs and bootstrap ranges from the per-chain scores. Reports 6 through 11 share the same `data/grpo_*.csv` files — each new report added rows for its new arms rather than creating separate files — so every report's figures are drawn directly from those CSVs and no numbers are re-typed into `build.py`.
 
-Numbers come from local, untracked result files under `training/reasoning/data/` and from the run logs; see each report's Code Structure section. Report 6's trained weights (SFT adapter, both PRMs, all three GRPO adapters) are on Hugging Face as private model repos under `sushanth9/prm-track-*`. Reports 7, 8 and 9's new adapters were not uploaded before their rental machines were deleted — only the eval outputs and diagnostics survive for those, not the checkpoints. All raw per-question data behind every session (evaluation completions, diagnostics, PRM validation) is backed up as a private Hugging Face dataset, `sushanth9/prm-track-raw-data`.
+Numbers come from local, untracked result files under `training/reasoning/data/` and from the run logs; see each report's Code Structure section. Report 6's trained weights (SFT adapter, both PRMs, all three GRPO adapters) are on Hugging Face as private model repos under `sushanth9/prm-track-*`. Reports 7, 8 and 9's new adapters were not uploaded before their rental machines were deleted — only the eval outputs and diagnostics survive for those, not the checkpoints. Report 11's four new adapters (SFT, PRM, both GRPO arms) were uploaded before its box was deleted. All raw per-question data behind every session (evaluation completions, diagnostics, PRM validation) is backed up as a private Hugging Face dataset, `sushanth9/prm-track-raw-data`.

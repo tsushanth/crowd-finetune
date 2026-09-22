@@ -30,7 +30,7 @@ run()  { local log=$1; shift; "$@" >> "$log" 2>&1 || fail "$log"; }
 rm -f /root/fail /root/all_done; : > /root/progress.log
 set -a; source /root/.openrouter; set +a
 
-n=$(wc -l < data/math_sft.jsonl 2>/dev/null || echo 0)
+n=$(wc -l < training/reasoning/data/math_sft.jsonl 2>/dev/null || echo 0)
 step "starting with $n pre-distilled, verified MATH traces (data/math_sft.jsonl)"
 [ "$n" -ge 200 ] || fail "only $n verified MATH traces, expected several hundred with the fixed teacher prompt"
 

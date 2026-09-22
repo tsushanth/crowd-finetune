@@ -240,6 +240,8 @@ GLOSSARY = {
     "Trace": "A written-out step-by-step solution used as a training example.",
     "Length-only baseline": "A deliberately lazy scorer that says the shorter the answer, the likelier it is right. A real scorer has to beat it or it is just measuring length.",
     "Vast": "The GPU rental marketplace used for the runs. Machines are rented by the hour and deleted after each job.",
+    "Format-compliance gate": "A cheap check run right after fine-tuning, before the expensive reward-model and reinforcement-learning stages: sample a few dozen answers and see what fraction actually use the required tag format. Catches a broken training pipeline early instead of at the final result.",
+    "McNemar's test": "A significance test for paired yes/no outcomes (here, right/wrong on the same questions from two models): it looks only at the questions where the two models disagree, and asks whether one side winning more of those disagreements is more than coincidence.",
 }
 
 
@@ -452,6 +454,23 @@ def make_figures_thread_c():
             row_h=46, right_pad=210, label_w=210)
 
 
+def make_figures_thread_c2():
+    """Report 11 figures: the MATH-domain retry, now with real (non-zero) MATH-500 accuracy."""
+    f = HERE / "figs"
+    ev = load_csv("grpo_eval_results.csv")
+    order = ["MATH-v2 SFT (784 traces)", "MATH-v2 GRPO outcome", "MATH-v2 GRPO prm"]
+    short = {"MATH-v2 SFT (784 traces)": "SFT", "MATH-v2 GRPO outcome": "GRPO outcome",
+             "MATH-v2 GRPO prm": "GRPO prm"}
+
+    groups = []
+    for ds in ("MATH-500 strict", "GSM8K"):
+        bars = [(short[m], float(next(x for x in ev if x["model"] == m and x["dataset"] == ds)["accuracy"]), m != order[0])
+                for m in order]
+        groups.append((f"{ds} (n={next(x for x in ev if x['dataset']==ds and x['model']==order[0])['n']})", bars))
+    hbars(f / "mathv2_accuracy.svg", groups, 0, 1.0, [0, 0.2, 0.4, 0.6, 0.8, 1.0],
+          "Accuracy (all questions)", label_w=160, bar_h=20, gap=8, gap_g=24)
+
+
 if __name__ == "__main__":
     make_figures()
     make_figures_grpo()
@@ -459,6 +478,7 @@ if __name__ == "__main__":
     make_figures_thread_a()
     make_figures_thread_b()
     make_figures_thread_c()
+    make_figures_thread_c2()
     targets = [HERE / a for a in sys.argv[1:]] or sorted(HERE.glob("[01][0-9]_*.md"))
     for md in targets:
         print("built", build(md))
