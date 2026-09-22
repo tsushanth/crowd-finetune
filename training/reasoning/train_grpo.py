@@ -52,7 +52,7 @@ def main():
 
     def prepare(example):
         question = example["question"]
-        reference = formats.extract_last_number(example["answer"])
+        reference = formats.extract_numeric_token(example["answer"])
         prompt = tokenizer.apply_chat_template(
             [{"role": "user", "content": question}],
             tokenize=False,

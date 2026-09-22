@@ -85,17 +85,19 @@ def reference_mode(raw_answer: str) -> str:
         return "number"
     if formats.extract_last_number(raw_answer) == formats.normalize_number(raw_answer):
         return "number"
+    if formats.extract_numeric_token(raw_answer) == raw_answer.strip():
+        return "number"
     return "string"
 
 
 def matches(completion: str, raw_answer: str, mode: str, strict: bool = False) -> bool:
     if mode == "number":
-        expected = formats.extract_last_number(raw_answer)
+        expected = formats.extract_numeric_token(raw_answer)
         if strict:
             parsed = formats.parse_completion(completion)
             got = parsed["answer"] if parsed["ok"] else None
-            return bool(expected) and got is not None and formats.extract_last_number(got) == expected
-        return bool(expected) and formats.exact_match(completion, expected)
+            return bool(expected) and got is not None and formats.numbers_equal(formats.extract_numeric_token(got), expected)
+        return bool(expected) and formats.numeric_match(completion, expected)
     expected = formats.clean_for_tags(raw_answer)
     parsed = formats.parse_completion(completion)
     got = formats.clean_for_tags(parsed.get("answer") or "")

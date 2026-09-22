@@ -60,7 +60,7 @@ def main():
 
     jobs = []
     for ex in pool:
-        ref = formats.extract_last_number(ex["answer"].split("####")[-1])
+        ref = formats.extract_numeric_token(ex["answer"].split("####")[-1])
         jobs += [(ex["question"], ref)] * args.samples
     texts = gen(pol, tok, [chat(q) for q, _ in jobs], 384, args.temperature, args.batch, dev)
 
@@ -69,7 +69,7 @@ def main():
         steps = P.split_steps(formats.parse_completion(t)["reasoning"])
         if not steps:
             continue
-        if formats.exact_match(t, ref):
+        if formats.numeric_match(t, ref):
             if right_count.get(q, 0) < args.max_right_per_q:
                 right_count[q] = right_count.get(q, 0) + 1
                 out.append({"question": q, "steps": steps, "labels": [1] * len(steps), "kind": "real_pos"})
@@ -90,7 +90,7 @@ def main():
     for k, (wi, i, p) in enumerate(ro):
         ref = wrong[wi][1]
         prefix = formats.REASONING_OPEN + "\n" + " ".join(wrong[wi][2][:i]) + " "
-        hit = any(formats.exact_match(prefix + c, ref) for c in comps[k * args.rollouts:(k + 1) * args.rollouts])
+        hit = any(formats.numeric_match(prefix + c, ref) for c in comps[k * args.rollouts:(k + 1) * args.rollouts])
         good[(wi, i)] = hit
     n_first = {}
     for wi, (q, ref, steps) in enumerate(wrong):

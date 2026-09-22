@@ -2,7 +2,7 @@ from . import formats, prm
 
 
 def exact_match_reward(prompts, completions, answer, **kwargs):
-    return [float(formats.exact_match(c, a)) for c, a in zip(completions, answer)]
+    return [float(formats.numeric_match(c, a)) for c, a in zip(completions, answer)]
 
 
 def format_reward(prompts, completions, **kwargs):

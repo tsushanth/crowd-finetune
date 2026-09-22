@@ -62,3 +62,57 @@ def normalize_number(value: str) -> str:
 def exact_match(completion: str, reference: str) -> bool:
     expected = normalize_number(reference)
     return bool(expected) and extract_answer(completion) == expected
+
+
+def _latex_to_plain(text: str) -> str:
+    """Turns \\frac{a}{b}/\\dfrac{a}{b} into a/b and strips \\boxed{}, $, and stray braces."""
+    text = re.sub(r"\\d?frac\s*{\s*([^{}]+?)\s*}\s*{\s*([^{}]+?)\s*}", r"(\1)/(\2)", text)
+    text = re.sub(r"\\boxed\s*{\s*(.*?)\s*}", r"\1", text, flags=re.DOTALL)
+    text = text.replace("$", "").replace("\\!", "").replace("\\,", "")
+    text = text.replace("\\left", "").replace("\\right", "")
+    return text
+
+
+def extract_numeric_token(text: str) -> str:
+    """Like extract_last_number, but also recognizes simple fractions (a/b or LaTeX \\frac{a}{b})."""
+    text = _latex_to_plain(text).replace(",", "")
+    matches = re.findall(r"[-+]?\(?-?\d+(?:\.\d+)?\)?\s*/\s*\(?-?\d+(?:\.\d+)?\)?|[-+]?\d+(?:\.\d+)?", text)
+    return matches[-1].strip() if matches else ""
+
+
+def to_float(token: str):
+    token = token.strip().strip("()").replace(" ", "")
+    try:
+        if "/" in token:
+            num, den = token.split("/", 1)
+            num, den = float(num.strip("()")), float(den.strip("()"))
+            return num / den if den != 0 else None
+        return float(token)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def numbers_equal(a: str, b: str, tol: float = 1e-6) -> bool:
+    """Numeric-equivalence comparison: 3/4 == 0.75 == \\frac{3}{4}. Falls back to False if either
+    side doesn't parse as a number (callers should keep their existing string-match fallback)."""
+    fa, fb = to_float(a), to_float(b)
+    if fa is None or fb is None:
+        return False
+    return abs(fa - fb) <= tol * max(1.0, abs(fb))
+
+
+def numeric_match(completion: str, reference: str, strict: bool = False) -> bool:
+    """Numeric-equivalence version of exact_match: accepts plain decimals, fractions, and
+    \\frac{}{} LaTeX on both sides, comparing by value rather than by string."""
+    expected = extract_numeric_token(reference)
+    if not expected:
+        return False
+    if strict:
+        parsed = parse_completion(completion)
+        source = parsed["answer"] if parsed["ok"] else None
+        if source is None:
+            return False
+    else:
+        source = completion
+    got = extract_numeric_token(source)
+    return bool(got) and numbers_equal(got, expected)
